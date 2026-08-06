@@ -1,12 +1,13 @@
 #include <assert.h>
 #include <errno.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/ptrace.h>
 #include <sys/user.h>
 #include <sys/wait.h>
 
-#include <platform/linux/breakpoint.h>
+#include <linux/breakpoint.h>
 
 #define PLACE_INT3_IN_FIRST_BYTE(word) ((word) & ~0xFFULL) | 0xCC
 
@@ -24,6 +25,7 @@ int fork_child(const char *path, char *const *argv, char *const *envp) {
       exit(EXIT_FAILURE);
     }
 
+    printf("Start executing.\n");
     execve(path, argv, envp);
 
     perror("execve");
@@ -62,6 +64,7 @@ void create_breakpoint(breakpoint_t *breakpoint, pid_t pid, void *hook_addr) {
   long peek_result = ptrace(PTRACE_PEEKTEXT, pid, hook_addr, NULL);
 
   if (peek_result == -1 && errno != 0) {
+    fflush(stdout);
     perror("ptrace");
     exit(EXIT_FAILURE);
   }
@@ -72,6 +75,7 @@ void create_breakpoint(breakpoint_t *breakpoint, pid_t pid, void *hook_addr) {
   word = PLACE_INT3_IN_FIRST_BYTE(word);
 
   if (ptrace(PTRACE_POKETEXT, pid, hook_addr, word) == -1) {
+    fflush(stdout);
     perror("ptrace");
     exit(EXIT_FAILURE);
   }
@@ -85,20 +89,13 @@ void execute_up_to_breakpoint(breakpoint_t *breakpoint) {
     exit(EXIT_FAILURE);
   }
 
-  if (regs.rip == (uintptr_t)breakpoint->hook_addr + 1) {
-    if (ptrace(PTRACE_POKETEXT, breakpoint->pid, breakpoint->hook_addr, breakpoint->old_word) ==
-        -1) {
-      perror("ptrace");
-      exit(EXIT_FAILURE);
-    }
+#ifdef __x86_64__
+  unsigned long long int ip = regs.rip;
+#elif defined(__i386__)
+  long int ip = regs.eip;
+#endif
 
-    --regs.rip;
-
-    if (ptrace(PTRACE_SETREGS, breakpoint->pid, NULL, &regs) == -1) {
-      perror("ptrace");
-      exit(EXIT_FAILURE);
-    }
-
+  if (ip == (uintptr_t)breakpoint->hook_addr) {
     if (ptrace(PTRACE_SINGLESTEP, breakpoint->pid, NULL, NULL) == -1) {
       perror("ptrace");
       exit(EXIT_FAILURE);
@@ -137,6 +134,35 @@ void execute_up_to_breakpoint(breakpoint_t *breakpoint) {
 
   if (WIFEXITED(status) || WIFSIGNALED(status)) {
     printf("Success continuing!\n");
-    exit(EXIT_SUCCESS);
+  }
+
+  if (ptrace(PTRACE_GETREGS, breakpoint->pid, NULL, &regs) == -1) {
+    perror("ptrace");
+    exit(EXIT_FAILURE);
+  }
+
+#ifdef __x86_64__
+  unsigned long long int *pip = &regs.rip;
+#elif defined(__i386__)
+  long int *pip = &regs.eip;
+#endif
+
+  if (*pip != (uintptr_t)breakpoint->hook_addr + 1) {
+    printf("Stop at unexpected instruction\nreal: %" PRIxPTR
+           "\nexpected: %" PRIxPTR "\n",
+           (uintptr_t)*pip, (uintptr_t)breakpoint->hook_addr + 1);
+  }
+
+  --(*pip);
+
+  if (ptrace(PTRACE_SETREGS, breakpoint->pid, NULL, &regs) == -1) {
+    perror("ptrace");
+    exit(EXIT_FAILURE);
+  }
+
+  if (ptrace(PTRACE_POKETEXT, breakpoint->pid, breakpoint->hook_addr,
+             breakpoint->old_word) == -1) {
+    perror("ptrace");
+    exit(EXIT_FAILURE);
   }
 }

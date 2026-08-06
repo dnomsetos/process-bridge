@@ -1,5 +1,4 @@
-build/
-cache/
+*/__pycache__
 .clang-format
 .clang-tidy
 .clangd

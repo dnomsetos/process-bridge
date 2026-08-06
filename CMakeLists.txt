@@ -1,14 +1,45 @@
-cmake_minimum_required(VERSION 4.2)
+cmake_minimum_required(VERSION 3.20)
 
 project(process-bridge LANGUAGES C)
 
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE INTERNAL "")
+set(CMAKE_EXPORT_COMPILE_COMMANDS
+    ON
+    CACHE INTERNAL "")
 
-add_executable(process-bridge src/main.c src/platform/linux/breakpoint.c src/platform/linux/process_info.c src/platform/linux/maps_parser.c)
+file(GLOB_RECURSE SRC_FILES CONFIGURE_DEPENDS
+     "${CMAKE_CURRENT_SOURCE_DIR}/native/src/*.c")
 
-target_compile_definitions(process-bridge PRIVATE _GNU_SOURCE)
+list(REMOVE_ITEM SRC_FILES "${CMAKE_CURRENT_SOURCE_DIR}/native/src/main.c")
 
-target_include_directories(process-bridge
-    PRIVATE
-        include
-)
+function(add_arch_targets ARCH_SUFFIX)
+  set(FLAGS ${ARGN})
+
+  set(LIB_NAME process-bridge-lib-${ARCH_SUFFIX})
+  set(EXE_NAME process-bridge-${ARCH_SUFFIX})
+
+  add_library(${LIB_NAME} STATIC ${SRC_FILES})
+
+  target_include_directories(${LIB_NAME}
+                             PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/native/include)
+
+  target_compile_definitions(${LIB_NAME} PRIVATE _GNU_SOURCE)
+
+  target_compile_options(${LIB_NAME} PUBLIC ${FLAGS})
+
+  target_link_options(${LIB_NAME} PUBLIC ${FLAGS})
+
+  add_executable(${EXE_NAME} native/src/main.c)
+
+  target_compile_options(${EXE_NAME} PRIVATE ${FLAGS})
+
+  target_link_options(${EXE_NAME} PRIVATE ${FLAGS})
+
+  target_link_libraries(${EXE_NAME} PRIVATE ${LIB_NAME})
+
+  install(TARGETS ${EXE_NAME} DESTINATION bin)
+
+endfunction()
+
+add_arch_targets(x64 -m64)
+
+add_arch_targets(x86 -m32)
