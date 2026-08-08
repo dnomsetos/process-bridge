@@ -1,5 +1,6 @@
 #include <elf.h>
 #include <fcntl.h>
+#include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,6 +9,7 @@
 
 #include <linux/maps_parser.h>
 #include <linux/process_info.h>
+#include <log.h>
 
 static inline uint16_t ehdr_type(const elf_info_t *info) {
   return info->class == ELF_CLASS_32 ? info->ehdr.e32.e_type
@@ -30,17 +32,20 @@ elf_class_t detect_elf_class(FILE *file) {
   unsigned char e_ident[EI_NIDENT];
 
   if (fseek(file, 0, SEEK_SET) != 0) {
-    perror("fseek");
-    exit(EXIT_FAILURE);
+    LOG_FATAL_ERRNO("fseek to start of ELF file failed");
   }
   if (fread(e_ident, 1, EI_NIDENT, file) != EI_NIDENT) {
-    perror("fread");
-    exit(EXIT_FAILURE);
+    if (ferror(file)) {
+      LOG_FATAL_ERRNO("fread of ELF ident bytes failed");
+    }
+    LOG_FATAL(
+        "file is too short to contain an ELF header (%d bytes "
+        "expected)",
+        EI_NIDENT);
   }
 
   if (memcmp(e_ident, ELFMAG, SELFMAG) != 0) {
-    fprintf(stderr, "Not an ELF file\n");
-    exit(EXIT_FAILURE);
+    LOG_FATAL("not an ELF file (bad magic bytes)");
   }
 
   switch (e_ident[EI_CLASS]) {
@@ -49,16 +54,14 @@ elf_class_t detect_elf_class(FILE *file) {
     case ELFCLASS64:
       return ELF_CLASS_64;
     default:
-      fprintf(stderr, "Unknown ELF class\n");
-      exit(EXIT_FAILURE);
+      LOG_FATAL("unknown ELF class byte 0x%02x", e_ident[EI_CLASS]);
   }
 }
 
 void open_elf(const char *filename, elf_info_t *info) {
   info->file = fopen(filename, "rb");
   if (!info->file) {
-    perror("fopen");
-    exit(EXIT_FAILURE);
+    LOG_FATAL_ERRNO("fopen('%s') failed", filename);
   }
 
   info->class = detect_elf_class(info->file);
@@ -70,35 +73,35 @@ void open_elf(const char *filename, elf_info_t *info) {
                                               : (void *)&info->ehdr.e64;
 
   if (fread(hdr_ptr, hdr_size, 1, info->file) != 1) {
-    perror("fread");
-    exit(EXIT_FAILURE);
+    LOG_FATAL_ERRNO("fread of ELF header from '%s' failed", filename);
   }
 
-  char link[PROC_BUF_SIZE];
+  char link[32];
 
   int fd = fileno(info->file);
   if (fd == -1) {
-    perror("fileno");
-    exit(EXIT_FAILURE);
+    LOG_FATAL_ERRNO("fileno() on the freshly opened ELF file failed");
   }
 
   snprintf(link, sizeof(link), "/proc/self/fd/%d", fd);
 
   ssize_t len = readlink(link, info->path, sizeof(info->path) - 1);
   if (len == -1) {
-    perror("readlink");
-    exit(EXIT_FAILURE);
+    LOG_FATAL_ERRNO(
+        "readlink('%s') failed while resolving the absolute "
+        "path of '%s'",
+        link, filename);
   }
 
   info->path[len] = '\0';
 
-  printf("elf absolute path: %s\n", info->path);
+  LOG_INFO("elf absolute path: %s", info->path);
 }
 
 bool is_pie(const elf_info_t *info) {
   if (ehdr_type(info) != ET_DYN && ehdr_type(info) != ET_EXEC) {
-    printf("Unsupported ELF type: %d\n", ehdr_type(info));
-    exit(EXIT_FAILURE);
+    LOG_FATAL("unsupported ELF type %d (expected ET_EXEC or ET_DYN)",
+              ehdr_type(info));
   }
 
   return ehdr_type(info) == ET_DYN;
@@ -107,24 +110,43 @@ bool is_pie(const elf_info_t *info) {
 uint64_t get_min_vaddr(const elf_info_t *info) {
   uint64_t min_vaddr = SIZE_MAX;
 
-  Elf64_Phdr phdr;
+  Elf32_Phdr phdr32;
+  Elf64_Phdr phdr64;
 
   for (size_t i = 0; i < ehdr_phnum(info); ++i) {
     off_t offset = (off_t)(ehdr_phoff(info) + (i * ehdr_phentsize(info)));
 
     if (fseek(info->file, offset, SEEK_SET) != 0) {
-      perror("fseek");
-      exit(EXIT_FAILURE);
+      LOG_FATAL_ERRNO("fseek to program header #%zu (offset %ld) failed", i,
+                      (long)offset);
     }
 
-    if (fread(&phdr, sizeof(Elf64_Phdr), 1, info->file) != 1) {
-      perror("fread");
-      exit(EXIT_FAILURE);
+    uint64_t p_type;
+    uint64_t p_vaddr;
+
+    if (info->class == ELF_CLASS_32) {
+      if (fread(&phdr32, sizeof(Elf32_Phdr), 1, info->file) != 1) {
+        LOG_FATAL_ERRNO("fread of 32-bit program header #%zu failed", i);
+      }
+      p_type = phdr32.p_type;
+      p_vaddr = phdr32.p_vaddr;
+    } else {
+      if (fread(&phdr64, sizeof(Elf64_Phdr), 1, info->file) != 1) {
+        LOG_FATAL_ERRNO("fread of 64-bit program header #%zu failed", i);
+      }
+      p_type = phdr64.p_type;
+      p_vaddr = phdr64.p_vaddr;
     }
 
-    if (phdr.p_type == PT_LOAD && phdr.p_vaddr < min_vaddr) {
-      min_vaddr = phdr.p_vaddr;
+    if (p_type == PT_LOAD && p_vaddr < min_vaddr) {
+      min_vaddr = p_vaddr;
     }
+  }
+
+  if (min_vaddr == SIZE_MAX) {
+    LOG_WARN(
+        "no PT_LOAD segment found; image base calculation will be "
+        "wrong");
   }
 
   return min_vaddr;
@@ -149,6 +171,13 @@ uint64_t get_image_base_via_elf_info(const elf_info_t *info) {
     }
   }
 
+  if (min_maps_addr == SIZE_MAX) {
+    LOG_FATAL(
+        "no mapping of '%s' found in /proc/%d/maps; the process may "
+        "not have loaded it yet, or the path doesn't match exactly",
+        info->path, info->pid);
+  }
+
   return min_maps_addr - min_vaddr;
 }
 
@@ -161,9 +190,11 @@ uint64_t get_image_base(const char *filename, pid_t pid) {
   uint64_t image_base = get_image_base_via_elf_info(&elf_info);
 
   if (fclose(elf_info.file) != 0) {
-    perror("fclose");
-    exit(EXIT_FAILURE);
+    LOG_FATAL_ERRNO("fclose('%s') failed", filename);
   }
+
+  LOG_INFO("image base for '%s' (pid %d): 0x%" PRIx64, filename, pid,
+           image_base);
 
   return image_base;
 }

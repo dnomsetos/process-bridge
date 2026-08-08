@@ -1,35 +1,51 @@
+from __future__ import annotations
+
 from ctypes import Structure, c_uint64, c_bool, c_char
 from qiling import Qiling
 from qiling.const import QL_ARCH
 from unicorn import UC_PROT_READ, UC_PROT_WRITE, UC_PROT_EXEC
-import sys
 
-import arch
+from . import arch
+from .log import get_logger
+
+log = get_logger(__name__)
 
 MAX_PATH = 4096
 
+_CLASS_CACHE: dict[int, type[Structure]] = {}
 
-class MapsEntry(Structure):
-    start: int = 0
-    end: int = 0
-    read: bool = False
-    write: bool = False
-    exec: bool = False
-    shared: bool = False
-    file_offset: int = 0
-    path: bytes = b"\x00" * 4096
 
-    _pack_ = 8 if sys.argv[1] == "X8664" else 4
-    _fields_ = [
-        ("start", c_uint64),
-        ("end", c_uint64),
-        ("read", c_bool),
-        ("write", c_bool),
-        ("exec", c_bool),
-        ("shared", c_bool),
-        ("file_offset", c_uint64),
-        ("path", c_char * MAX_PATH),
-    ]
+def _build_maps_entry_cls(pack: int) -> type[Structure]:
+    class MapsEntry(Structure):
+        _pack_ = pack
+        _fields_ = [
+            ("start", c_uint64),
+            ("end", c_uint64),
+            ("read", c_bool),
+            ("write", c_bool),
+            ("exec", c_bool),
+            ("shared", c_bool),
+            ("file_offset", c_uint64),
+            ("path", c_char * MAX_PATH),
+        ]
+
+    return MapsEntry
+
+
+def get_maps_entry_cls() -> type[Structure]:
+    if arch.SNAPSHOT_ARCH is None:
+        raise RuntimeError(
+            "get_maps_entry_cls() called before arch.get_arch_impl() selected "
+            "a target architecture"
+        )
+
+    pack = 8 if arch.SNAPSHOT_ARCH == QL_ARCH.X8664 else 4
+
+    if pack not in _CLASS_CACHE:
+        log.debug("building MapsEntry ctypes class with pack=%d", pack)
+        _CLASS_CACHE[pack] = _build_maps_entry_cls(pack)
+
+    return _CLASS_CACHE[pack]
 
 
 def to_uc_perms(entry: MapsEntry) -> int:
@@ -44,36 +60,43 @@ def to_uc_perms(entry: MapsEntry) -> int:
 
 
 def dump_mapping(ql: Qiling, entry: MapsEntry, content: bytes) -> None:
-    print(
-        hex(entry.start),
-        hex(entry.end),
+    perms = to_uc_perms(entry)
+    size = entry.end - entry.start
+
+    log.debug(
+        "mapping start=%#x end=%#x size=%#x perms=%d read=%s write=%s "
+        "exec=%s shared=%s path=%r",
+        entry.start,
+        entry.end,
+        size,
+        perms,
         entry.read,
         entry.write,
         entry.exec,
         entry.shared,
-        hex(entry.file_offset),
-        str(entry.path),
-    )
-
-    perms = to_uc_perms(entry)
-    size = entry.end - entry.start
-
-    print(
-        f"dump mapping: start={entry.start:#x} end={entry.end:#x} "
-        f"size={size:#x} perms={perms} path={entry.path}"
+        entry.path,
     )
 
     try:
         ql.mem.map(entry.start, size, perms=perms)
-    except:
-        print(
-            f"mem.map failed: start={entry.start:#x} end={entry.end:#x} "
-            f"size={size:#x} perms={perms} path={entry.path} -> {e!r}"
+    except Exception:
+        log.error(
+            "mem.map failed: start=%#x end=%#x size=%#x perms=%d path=%r",
+            entry.start,
+            entry.end,
+            size,
+            perms,
+            entry.path,
         )
         raise
 
     try:
         ql.mem.write(entry.start, content)
     except Exception:
-        print(f"mem.write failed: start={entry.start:#x} size={size:#x} -> {e!r}")
+        log.error(
+            "mem.write failed: start=%#x size=%#x path=%r",
+            entry.start,
+            size,
+            entry.path,
+        )
         raise

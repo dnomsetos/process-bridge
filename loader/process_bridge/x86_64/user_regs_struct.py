@@ -1,6 +1,10 @@
 from ctypes import Structure, c_ulonglong
 from qiling import Qiling
 
+from ..log import get_logger
+
+log = get_logger(__name__)
+
 
 class UserRegsStruct(Structure):
     r15: int = 0
@@ -89,3 +93,29 @@ def dump_regs(ql: Qiling, snapshot_info: SnapshotInfo) -> None:
     ql.arch.regs.eflags = snapshot_info.regs.elflags
     ql.arch.regs.fsbase = snapshot_info.regs.fs_base
     ql.arch.regs.gsbase = snapshot_info.regs.gs_base
+
+    log.debug(
+        "restored regs: rax=%#x rbx=%#x rcx=%#x rdx=%#x rsi=%#x rdi=%#x "
+        "rbp=%#x rsp=%#x r8=%#x r9=%#x r10=%#x r11=%#x r12=%#x r13=%#x "
+        "r14=%#x r15=%#x rip=%#x eflags=%#x fs_base=%#x gs_base=%#x",
+        snapshot_info.regs.rax,
+        snapshot_info.regs.rbx,
+        snapshot_info.regs.rcx,
+        snapshot_info.regs.rdx,
+        snapshot_info.regs.rsi,
+        snapshot_info.regs.rdi,
+        snapshot_info.regs.rbp,
+        snapshot_info.regs.rsp,
+        snapshot_info.regs.r8,
+        snapshot_info.regs.r9,
+        snapshot_info.regs.r10,
+        snapshot_info.regs.r11,
+        snapshot_info.regs.r12,
+        snapshot_info.regs.r13,
+        snapshot_info.regs.r14,
+        snapshot_info.regs.r15,
+        snapshot_info.regs.rip,
+        snapshot_info.regs.elflags,
+        snapshot_info.regs.fs_base,
+        snapshot_info.regs.gs_base,
+    )

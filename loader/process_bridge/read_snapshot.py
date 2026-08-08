@@ -3,30 +3,43 @@ from typing import TypeVar
 from qiling import Qiling
 import mmap
 
-import arch
-from maps_entry import MapsEntry, dump_mapping
+from . import arch
+from . import maps_entry as maps_entry_mod
+from .maps_entry import dump_mapping
+from .log import get_logger
+
+log = get_logger(__name__)
 
 T = TypeVar("T", bound=Structure)
 
 
 def read_struct(cls: type[T], view: memoryview, offset: int) -> tuple[T, int]:
     size = sizeof(cls)
-    print(f"{cls.__name__} {size}")
     if offset + size > len(view):
         raise EOFError(
             f"Expected {size} bytes for {cls.__name__} at offset {offset}, "
-            + f"but only {len(view) - offset} remain"
+            f"but only {len(view) - offset} remain"
         )
     obj = cls.from_buffer_copy(view[offset : offset + size])
-    if hasattr(cls, "path"):
-        print(obj.path)
+    log.debug("read %s (%d bytes) at offset %#x", cls.__name__, size, offset)
     return obj, offset + size
 
 
-def load_snapshot(ql: Qiling, snapshot_path: str):
+def load_snapshot(ql: Qiling, snapshot_path: str) -> None:
+    try:
+        file = open(snapshot_path, "rb")
+    except OSError as err:
+        raise OSError(f"failed to open snapshot file '{snapshot_path}': {err}") from err
 
-    with open(snapshot_path, "rb") as file:
-        mm = mmap.mmap(file.fileno(), 0, access=mmap.ACCESS_READ)
+    with file:
+        try:
+            mm = mmap.mmap(file.fileno(), 0, access=mmap.ACCESS_READ)
+        except (OSError, ValueError) as err:
+            raise OSError(
+                f"failed to mmap snapshot file '{snapshot_path}' "
+                f"(is it empty or corrupt?): {err}"
+            ) from err
+
         view = memoryview(mm)
 
         try:
@@ -34,37 +47,53 @@ def load_snapshot(ql: Qiling, snapshot_path: str):
 
             arch.dump_regs(ql, snapshot)
 
-            while offset < len(view):
-                entry, offset = read_struct(MapsEntry, view, offset)
+            maps_entry_cls = maps_entry_mod.get_maps_entry_cls()
 
-                print(
-                    hex(entry.start),
-                    hex(entry.end),
+            mappings_loaded = 0
+
+            while offset < len(view):
+                entry, offset = read_struct(maps_entry_cls, view, offset)
+
+                log.debug(
+                    "mapping %#x-%#x r=%s w=%s x=%s shared=%s offset=%#x path=%r",
+                    entry.start,
+                    entry.end,
                     entry.read,
                     entry.write,
                     entry.exec,
                     entry.shared,
-                    hex(entry.file_offset),
-                    str(entry.path),
+                    entry.file_offset,
+                    entry.path,
                 )
 
                 size = entry.end - entry.start
                 if offset + size > len(view):
                     raise EOFError(
-                        f"Mapping [{entry.start:#x}-{entry.end:#x}] claims {size} bytes "
-                        + f"of content, but only {len(view) - offset} remain in file"
+                        f"Mapping [{entry.start:#x}-{entry.end:#x}] claims {size} "
+                        f"bytes of content, but only {len(view) - offset} remain "
+                        "in file (snapshot file looks truncated or corrupt)"
                     )
 
                 content = view[offset : offset + size]
-                dump_mapping(ql, entry, content.tobytes())
-                content.release()
+                try:
+                    dump_mapping(ql, entry, content.tobytes())
+                finally:
+                    content.release()
 
                 offset += size
+                mappings_loaded += 1
 
             arch.finalize(ql, snapshot)
-        except Exception as err:
-            print(f"Error while loading snapshot:\n{err}")
-            raise err
+
+            log.info(
+                "loaded snapshot '%s': %d mapping(s), %d bytes total",
+                snapshot_path,
+                mappings_loaded,
+                len(view),
+            )
+        except Exception:
+            log.exception("failed to load snapshot '%s'", snapshot_path)
+            raise
         finally:
             view.release()
             mm.close()

@@ -36,7 +36,7 @@ function(add_arch_targets ARCH_SUFFIX)
 
   target_link_libraries(${EXE_NAME} PRIVATE ${LIB_NAME})
 
-  install(TARGETS ${EXE_NAME} DESTINATION bin)
+  install(TARGETS ${EXE_NAME} DESTINATION process_bridge/bin)
 
 endfunction()
 

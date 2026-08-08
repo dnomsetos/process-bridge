@@ -19,7 +19,7 @@ dependencies = [
 
 [tool.scikit-build]
 wheel.packages = [
-    "python/process_bridge"
+    "loader/process_bridge"
 ]
 
 cmake.build-type = "Release"
