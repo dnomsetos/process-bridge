@@ -4,3 +4,4 @@ build
 .clangd
 venv/
 *__pycache__*
+*ql_snapshot*
