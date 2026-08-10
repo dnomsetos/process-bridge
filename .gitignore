@@ -1,4 +1,7 @@
-*/__pycache__
+build
 .clang-format
 .clang-tidy
 .clangd
+venv/
+*__pycache__*
+*ql_snapshot*

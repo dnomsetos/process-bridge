@@ -36,10 +36,16 @@ function(add_arch_targets ARCH_SUFFIX)
 
   target_link_libraries(${EXE_NAME} PRIVATE ${LIB_NAME})
 
-  install(TARGETS ${EXE_NAME} DESTINATION bin)
+  install(TARGETS ${EXE_NAME} DESTINATION process_bridge/bin)
 
 endfunction()
 
 add_arch_targets(x64 -m64)
 
 add_arch_targets(x86 -m32)
+
+include(CTest)
+
+if(BUILD_TESTING)
+  add_subdirectory(tests/native)
+endif()

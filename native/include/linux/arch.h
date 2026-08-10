@@ -10,6 +10,6 @@
 
 #else
 
-#error "Unsupperted architecture"
+#error "Unsupported architecture"
 
 #endif

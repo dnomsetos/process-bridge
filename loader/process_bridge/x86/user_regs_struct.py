@@ -10,6 +10,10 @@ from qiling.arch.x86_const import (
     QL_X86_A_DATA_W,
 )
 
+from ..log import get_logger
+
+log = get_logger(__name__)
+
 
 class UserRegsStruct(Structure):
     ebp: int = 0
@@ -85,27 +89,30 @@ def dump_regs(ql: Qiling, snapshot_info: SnapshotInfo) -> None:
     ql.arch.regs.eip = snapshot_info.regs.eip
     ql.arch.regs.eflags = snapshot_info.regs.eflags
 
-    print(
-        f"ebx: {hex(snapshot_info.regs.ebx)}\n"
-        + f"ecx: {hex(snapshot_info.regs.ecx)}\n"
-        + f"edx: {hex(snapshot_info.regs.edx)}\n"
-        + f"esi: {hex(snapshot_info.regs.esi)}\n"
-        + f"edi: {hex(snapshot_info.regs.edi)}\n"
-        + f"ebp: {hex(snapshot_info.regs.ebp)}\n"
-        + f"eax: {hex(snapshot_info.regs.eax)}\n"
-        + f"xds: {hex(snapshot_info.regs.xds)}\n"
-        + f"xes: {hex(snapshot_info.regs.xes)}\n"
-        + f"xfs: {hex(snapshot_info.regs.xfs)}\n"
-        + f"xgs: {hex(snapshot_info.regs.xgs)}\n"
-        + f"orig_eax: {hex(snapshot_info.regs.orig_eax)}\n"
-        + f"eip: {hex(snapshot_info.regs.eip)}\n"
-        + f"xcs: {hex(snapshot_info.regs.xcs)}\n"
-        + f"eflags: {hex(snapshot_info.regs.eflags)}\n"
-        + f"esp: {hex(snapshot_info.regs.esp)}\n"
-        + f"xss: {hex(snapshot_info.regs.xss)}\n"
-        + f"base address: {hex(snapshot_info.seg.base_addr)}\n"
-        + f"limit: {hex(snapshot_info.seg.limit)}\n"
-        + f"flags: {hex(snapshot_info.seg.flags)}"
+    log.debug(
+        "restored regs: eax=%#x ebx=%#x ecx=%#x edx=%#x esi=%#x edi=%#x "
+        "ebp=%#x esp=%#x eip=%#x eflags=%#x orig_eax=%#x xcs=%#x xds=%#x "
+        "xes=%#x xfs=%#x xgs=%#x xss=%#x | tls base=%#x limit=%#x flags=%#x",
+        snapshot_info.regs.eax,
+        snapshot_info.regs.ebx,
+        snapshot_info.regs.ecx,
+        snapshot_info.regs.edx,
+        snapshot_info.regs.esi,
+        snapshot_info.regs.edi,
+        snapshot_info.regs.ebp,
+        snapshot_info.regs.esp,
+        snapshot_info.regs.eip,
+        snapshot_info.regs.eflags,
+        snapshot_info.regs.orig_eax,
+        snapshot_info.regs.xcs,
+        snapshot_info.regs.xds,
+        snapshot_info.regs.xes,
+        snapshot_info.regs.xfs,
+        snapshot_info.regs.xgs,
+        snapshot_info.regs.xss,
+        snapshot_info.seg.base_addr,
+        snapshot_info.seg.limit,
+        snapshot_info.seg.flags,
     )
 
 
@@ -134,7 +141,21 @@ def restore_tls(ql: Qiling, snapshot_info: SnapshotInfo) -> None:
         access |= QL_X86_A_DATA_W
 
     index = ql.os.gdtm.get_free_idx(12)
+    if index is None:
+        raise RuntimeError(
+            "no free GDT descriptor slot available to restore the "
+            "snapshot's TLS segment"
+        )
+
     selector = ql.os.gdtm.register_gdt_segment(
         index, snapshot_info.seg.base_addr, byte_limit, access
     )
     ql.arch.regs.gs = selector
+
+    log.debug(
+        "restored TLS segment: base=%#x limit=%#x gdt_index=%d selector=%#x",
+        snapshot_info.seg.base_addr,
+        byte_limit,
+        index,
+        selector,
+    )

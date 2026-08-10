@@ -1,27 +1,28 @@
 # process-bridge
 
-Инструмент для снятия снепшота нативного процесса Linux в точке останова
-(регистры + карта памяти) с последующим восстановлением этого состояния
-внутри эмулятора Qiling. Состоит из двух частей:
+A tool for snapshotting a native Linux process at a breakpoint (registers +
+memory mappings) and restoring that state inside the [Qiling](https://qiling.io/)
+emulator to continue execution there. It has two parts:
 
-- `native/` — C-утилита (`process-bridge-x64` / `process-bridge-x86`),
-  которая форкает целевой процесс, ставит breakpoint по смещению от базы
-  образа, дожидается его срабатывания и дампит снапшот;
-- `loader/process_bridge/` — Python-обвязка на Qiling, которая читает
-  дамп и продолжает исполнение уже внутри эмулятора.
+- `native/` — a C utility (`process-bridge-x64` / `process-bridge-x86`) that
+  forks the target process, sets a breakpoint at an offset from the image
+  base, runs the process until the breakpoint hits, and dumps a snapshot;
+- `loader/process_bridge/` — a Python/Qiling wrapper that reads the dump and
+  resumes execution inside the emulator.
 
-## Требования
+## Requirements
 
-- CMake ≥ 3.20 и gcc с поддержкой `-m64` и `-m32`
-- Python ≥ 3.10 и пакет `qiling` (для Python-части)
-- Linux — нативная часть использует `ptrace(2)` и заголовки из `linux/`,
-  под другие платформы не собирается (`platform.h` явно роняет сборку)
+- CMake ≥ 3.20 and `gcc`
+- Python ≥ 3.10 and the `qiling` package (for the Python side)
+- Linux — the native part relies on `ptrace(2)` and headers under
+  `native/include/linux/`; it won't build on other platforms
+  (`platform.h` deliberately fails the build there)
 
-## Стандартная сборка
+## Building
 
-`CMakeLists.txt` собирает **сразу оба** таргета — 64-битный и 32-битный
-(`add_arch_targets(x64 -m64)` и `add_arch_targets(x86 -m32)`), поэтому
-даже обычная сборка требует, чтобы компилятор умел собирать 32-битный код.
+`CMakeLists.txt` builds **both** targets at once — 64-bit and 32-bit
+(`add_arch_targets(x64 -m64)` and `add_arch_targets(x86 -m32)`) — so even a
+plain build requires a compiler that can produce 32-bit code.
 
 ```bash
 mkdir build && cd build
@@ -29,48 +30,91 @@ cmake -DCMAKE_BUILD_TYPE=Release ..
 cmake --build . -j"$(nproc)"
 ```
 
-После сборки в `build/` появятся четыре артефакта:
+After building, `build/` will contain four artifacts:
 
 - `process-bridge-x64`, `libprocess-bridge-lib-x64.a`
 - `process-bridge-x86`, `libprocess-bridge-lib-x86.a`
 
-### Пример сборки x86-таргета на x86_64-хосте
+### Building the x86 target on an x86_64 host
 
-Раз хост x86_64, для `-m32` нужны 32-битные мультилиб-версии libc и
-заголовков — без них сборка `process-bridge-x86` упадёт на этапе линковки.
+Since the host is x86_64, `-m32` needs the 32-bit multilib versions of libc
+and the headers — without them, `process-bridge-x86` fails to link.
 
 ```bash
 # Debian/Ubuntu
 sudo apt update
 sudo apt install gcc-multilib g++-multilib
 
-# затем обычная сборка соберёт оба таргета сразу
+# a normal build now builds both targets
 mkdir build && cd build
 cmake -DCMAKE_BUILD_TYPE=Release ..
 cmake --build . -j"$(nproc)"
 ```
 
-## Запуск
+## Usage (native part)
 
 ```bash
-./build/process-bridge-x64 <hex-offset> <path-to-target-binary> [target-args...]
+./build/process-bridge-x64 <breakpoint_offset_hex> <path-to-target-binary> [target-args...]
 ```
 
-- `hex-offset` — смещение breakpoint'а от базы загруженного образа (hex, без `0x`)
-- `path-to-target-binary` — путь к трассируемому исполняемому файлу
-- `target-args...` — опциональные аргументы, которые получит целевой процесс
+- `breakpoint_offset_hex` — the breakpoint's offset from the loaded image's
+  base address, in hex, without a `0x` prefix
+- `path-to-target-binary` — path to the executable to trace
+- `target-args...` — optional arguments passed through to the target process
 
-Утилита форкает и запускает `target-binary`, ставит breakpoint по адресу
-`image_base + hex-offset`, доводит процесс до него и пишет снепшот в
-каталог `ql_snapshot` в текущей директории.
+The utility forks and launches `target-binary`, sets a breakpoint at
+`image_base + breakpoint_offset_hex`, runs the process up to that point, and
+writes a snapshot to the `ql_snapshot` directory in the current working
+directory.
 
-Для 32-битного трассируемого процесса используется `process-bridge-x86`
-по тому же принципу.
+For a 32-bit target, use `process-bridge-x86` the same way.
 
-## Python/Qiling-часть
+For a PIE binary, `breakpoint_offset_hex` is simply the symbol's virtual
+address as reported by `nm`/`objdump -d` on the binary — see
+[`examples/hello`](examples/hello) for a walkthrough.
+
+## Usage (Python/Qiling part)
 
 ```bash
 pip install .
-process-bridge-x64   # запустить собранный бинарник x64 через обёртку
-process-bridge-x86   # то же для x86
+process-bridge-x64   # run the compiled x64 binary through the installed wrapper
+process-bridge-x86   # same, for x86
 ```
+
+`pip install .` compiles the native binaries via CMake (through
+`scikit-build-core`) and bundles them into the `process_bridge` package;
+`process-bridge-x64` / `process-bridge-x86` on your `PATH` just forward their
+arguments to the matching compiled binary.
+
+For development, `pip install -e .` also works. Editable installs don't run
+CMake's `install()` step into the package tree, so `process-bridge-x64` /
+`process-bridge-x86` fall back to looking for the binaries in the plain
+`build/` directory from the [Building](#building) section above — build the
+project there first:
+
+```bash
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j"$(nproc)"
+pip install -e .
+```
+
+If you keep binaries somewhere else, point `PROCESS_BRIDGE_BIN_DIR` at that
+directory instead.
+
+Once a snapshot exists, load and resume it from Python with
+`process_bridge.snaphot_init.from_snapshot(...)`:
+
+```python
+from process_bridge import snaphot_init
+
+ql, entry = snaphot_init.from_snapshot("x86_64", "dummy_rootfs", "ql_snapshot", QL_VERBOSE.DEBUG)
+ql.emu_start(begin=entry, end=...)
+```
+
+`rootfs_path` just needs to point at an existing (can be empty) directory —
+Qiling requires one to initialize, but since every default mapping it creates
+is unmapped and replaced by the snapshot's own mappings before execution
+resumes, its contents don't matter here.
+
+See [`examples/hello`](examples/hello) and [`examples/nginx`](examples/nginx)
+for two complete, runnable examples.
