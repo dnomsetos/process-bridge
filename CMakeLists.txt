@@ -43,3 +43,9 @@ endfunction()
 add_arch_targets(x64 -m64)
 
 add_arch_targets(x86 -m32)
+
+include(CTest)
+
+if(BUILD_TESTING)
+  add_subdirectory(tests/native)
+endif()

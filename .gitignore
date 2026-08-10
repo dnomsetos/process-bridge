@@ -1,4 +1,6 @@
+build
 .clang-format
 .clang-tidy
 .clangd
 venv/
+*__pycache__*

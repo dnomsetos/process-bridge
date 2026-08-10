@@ -12,7 +12,7 @@ _SUPPORTED_ARCHES = {"x86_64": QL_ARCH.X8664, "x86": QL_ARCH.X86}
 
 
 def from_snapshot(
-    arch: str, rootfs_path: str, snapshot_path: str
+    arch: str, rootfs_path: str, snapshot_path: str, ql_verbose: QL_VERBOSE
 ) -> tuple[Qiling, int]:
     try:
         ql_arch = _SUPPORTED_ARCHES[arch]
@@ -35,7 +35,7 @@ def from_snapshot(
             archtype=ql_arch,
             ostype=QL_OS.LINUX,
             rootfs=rootfs_path,
-            verbose=QL_VERBOSE.DEFAULT,
+            verbose=ql_verbose,
         )
     except Exception:
         log.exception("failed to construct Qiling instance (rootfs=%r)", rootfs_path)

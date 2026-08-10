@@ -28,3 +28,14 @@ cmake.build-type = "Release"
 [project.scripts]
 process-bridge-x64 = "process_bridge.scripts:run_x64"
 process-bridge-x86 = "process_bridge.scripts:run_x86"
+
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0",
+]
+
+
+[tool.pytest.ini_options]
+testpaths = ["tests/python"]
+
