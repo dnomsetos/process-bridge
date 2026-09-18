@@ -1,25 +1,52 @@
 # nginx
 
-A more realistic example: snapshot a running nginx worker at a breakpoint
-inside its own code, then resume execution inside Qiling and inspect a
-buffer nginx is working with at that point.
+A more realistic example: take a snapshot of a native nginx process
+immediately before it calls `ngx_http_parse_request_line`, restore that state
+inside Qiling, and inspect the HTTP request that is about to be parsed.
 
-## 1. Get a matching nginx build
+> **Recommended:** run this example inside the Docker environment provided by
+> the `Dockerfile` in the project root. It provides a reproducible Ubuntu 24.04
+> environment with the required build tools and dependencies.
+
+## 1. Start the development container
+
+From the project root:
+
+```bash
+docker build -t process-bridge .
+```
+
+Then start the container with the project mounted into `/workspace`:
+
+```bash
+docker run --rm -it \
+    -v "$PWD:/workspace" \
+    process-bridge
+```
+
+Continue with the remaining steps inside the container.
+
+## 2. Get a matching nginx build
 
 `setup_nginx.sh` installs the exact nginx build this example was set up
-against (pin the version so the breakpoint offset you find with `nm`/`objdump`
-stays valid):
+against. The version is pinned so that the instruction address used for the
+breakpoint remains valid:
 
 ```bash
 sudo bash setup_nginx.sh
 # apt-get install -y nginx=1.24.0-2ubuntu7 nginx-common=1.24.0-2ubuntu7
 ```
 
-## 2. Run it with this example's config
+The example expects the resulting binary at:
 
-`nginx.conf` runs a single worker in the foreground, logging to `stderr`, so
-`process-bridge` can trace it directly without dealing with nginx's usual
-master/worker forking and daemonization:
+```text
+/usr/sbin/nginx
+```
+
+## 3. Run nginx with this example's configuration
+
+`nginx.conf` runs a single nginx process in the foreground, with logging sent
+to `stderr`:
 
 ```nginx
 master_process off;
@@ -27,49 +54,105 @@ daemon off;
 worker_processes  1;
 ```
 
-It listens on port 80 and serves static files, which is enough to trigger
-`ngx_http_parse_request_line`, the function this example breaks into.
+This avoids nginx's usual master/worker process management and daemonization,
+so `process-bridge` can trace the process directly.
 
-## 3. Find the breakpoint offset
+The configuration listens on port 80 and serves static files. A request is
+enough to make nginx reach `ngx_http_parse_request_line`.
 
-This example breaks at `ngx_http_parse_request_line`:
+## 4. Find the `call ngx_http_parse_request_line` instruction
 
-```c
-ngx_int_t
-ngx_http_parse_request_line(ngx_http_request_t *r, ngx_buf_t *b)
-```
+The breakpoint must be placed on the **`call` instruction that invokes**
+`ngx_http_parse_request_line`, not on the first instruction of
+`ngx_http_parse_request_line` itself.
 
-It's a good breakpoint target for this walkthrough because its second
-argument (`b`, passed in `rsi` per the x86-64 SysV calling convention) is the
-`ngx_buf_t` holding the raw request line nginx is about to parse — exactly
-what `read_data` in `emu_script.py` (below) reads out.
+This is important because the snapshot is taken immediately before the call is
+executed. At that point, the function arguments are still in the registers
+set up by the caller.
 
-Find its address with `nm` or `objdump -d` on the `nginx` binary, and use
-that address as the hex offset — nginx's stock builds aren't PIE, so this is
-the function's address directly, not an offset from a runtime base:
+Find the call instruction with `objdump`:
 
 ```bash
-nm -D /usr/sbin/nginx | grep ngx_http_parse_request_line
+objdump -D /usr/sbin/nginx | grep 'call.*ngx_http_parse_request_line'
 ```
 
-## 4. Take the snapshot
+For example:
+
+```text
+401234: e8 56 78 9a ff    call   39abc0 <ngx_http_parse_request_line>
+```
+
+In this example, the breakpoint offset is:
+
+```text
+0x401234
+```
+
+Use the address of the `call` instruction itself.
+
+The exact address depends on the nginx build, which is why this example uses a
+pinned nginx version.
+
+## 5. Take the snapshot
+
+Install `process-bridge` from the project root:
 
 ```bash
-process-bridge-x64 <offset> /usr/sbin/nginx -c /path/to/examples/nginx/nginx.conf
+pip install .
 ```
 
-Then send it a request (e.g. `curl localhost/`) so it actually reaches the
-breakpoint; `process-bridge-x64` waits for that hit before dumping
-`ql_snapshot`.
+Before starting `process-bridge`, schedule a delayed HTTP request:
 
-## 5. Resume it in Qiling and read the buffer
+```bash
+(sleep 3; curl -v http://127.0.0.1/) &
+```
 
-`emu_script.py` hooks the restored entry point and, before letting execution
-continue, reads out the buffer that `ngx_http_parse_request_line` received as
-its `b` argument (`rsi`):
+The delayed request is necessary because `process-bridge` waits for nginx to
+reach the breakpoint. The request must therefore be started independently so
+that it arrives after nginx has been launched.
+
+Now start nginx through the x86_64 native component:
+
+```bash
+process-bridge-x86_64-linux \
+    0x401234 \
+    /usr/sbin/nginx \
+    -c /path/to/examples/nginx/nginx.conf
+```
+
+Replace `401234` with the address of the `call
+ngx_http_parse_request_line` instruction found in the previous step.
+
+When the delayed `curl` request reaches nginx, execution stops at the `call`
+instruction and `process-bridge` creates the snapshot in:
+
+```text
+ql_snapshot
+```
+
+To enable detailed diagnostic output:
+
+```bash
+(sleep 3; curl -v http://127.0.0.1/) &
+
+PROCESS_BRIDGE_LOG_LEVEL=DEBUG \
+process-bridge-x86_64-linux \
+    0x401234 \
+    /usr/sbin/nginx \
+    -c /path/to/examples/nginx/nginx.conf
+```
+
+## 6. Resume the snapshot in Qiling
+
+`emu_script.py` loads the snapshot, hooks the restored instruction pointer,
+and reads the `ngx_buf_t` passed as the second argument to
+`ngx_http_parse_request_line`:
 
 ```python
-def read_data(ql: Qiling) -> None:
+from process_bridge import snaphot_init
+
+
+def read_data(ql):
     b_ptr = ql.arch.regs.rsi
 
     pos = ql.mem.read_ptr(b_ptr)
@@ -81,29 +164,60 @@ def read_data(ql: Qiling) -> None:
 
 if __name__ == "__main__":
     ql, entry = snaphot_init.from_snapshot(
-        "x86_64", "dummy_rootfs", "ql_snapshot", QL_VERBOSE.DEBUG
+        "x86_64",
+        "dummy_rootfs",
+        "ql_snapshot",
     )
-    try:
-        ql.hook_address(callback=read_data, address=entry)
-        ql.emu_start(begin=entry, end=0)
-    except UcError as e:
-        ...
+
+    read_data(ql)
+
+    ql.emu_start(
+        begin=entry,
+        end=0,
+    )
 ```
 
-`b_ptr` is that `ngx_buf_t *b`; its first two fields are the `pos` and `last`
-pointers, so `read_data` dereferences both and prints the bytes in between —
-the raw request line nginx is about to parse at the moment the snapshot was
-taken. `hook_address` fires the callback right as execution resumes at
-`entry`, before any instruction of `ngx_http_parse_request_line` itself
-runs, so `rsi` still holds the untouched `b` argument from the original
-call. `emu_start(..., end=0)` then just lets Qiling run free from there; the
-`except UcError` block (same as in `examples/hello`) dumps the faulting
-address and disassembly if the emulator hits unmapped memory or an
-unsupported instruction.
+`entry` is the restored value of `rip`, which points to the
+`call ngx_http_parse_request_line` instruction where the snapshot was taken.
 
-Run it the same way as the `hello` example:
+Under the x86-64 System V calling convention, the second function argument is
+passed in `rsi`, so `b_ptr` contains the `ngx_buf_t *b` argument.
+
+The `ngx_buf_t` structure starts with the `pos` and `last` pointers.
+`read_data` reads these pointers and prints the bytes between them. At this
+point, these bytes contain the HTTP request nginx is about to parse.
+
+The `hook_address` callback runs before the instruction at `entry` is
+executed. Therefore, the callback sees the same register and memory state that
+was captured by `process-bridge`, immediately before the original `call`.
+
+The required Qiling `rootfs` does not need to contain anything for this
+example. `dummy_rootfs` only needs to exist as a directory because Qiling
+requires a rootfs during initialization. The default mappings created by
+Qiling are replaced with the mappings restored from the snapshot.
+
+Create the directory and run the script:
 
 ```bash
-mkdir -p dummy_rootfs
+mkdir dummy_rootfs
 python3 emu_script.py
 ```
+
+## 7. What this demonstrates
+
+At this point we have a snapshot of a **real native nginx process** at a
+specific execution point, including the actual request buffer that nginx is
+about to process.
+
+The snapshot can now be restored repeatedly, allowing the request data to be
+modified between runs. This makes it possible to study how nginx processes
+different inputs without having to drive the application from the beginning
+each time, and provides a convenient basis for fuzzing the code that follows.
+
+Reaching such a state directly in an emulator can be difficult for a complex
+application like nginx, since reproducing its entire execution path and
+surrounding system state in the emulated environment may require substantial
+setup. `process-bridge` solves this by reaching the desired state natively and
+capturing it, then handing that state over to Qiling for further execution,
+instrumentation, and repeated experimentation.
+

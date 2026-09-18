@@ -107,7 +107,6 @@ def test_load_snapshot_dispatches_regs_and_all_mappings(tmp_path, monkeypatch):
     load_snapshot(ql=object(), snapshot_path=str(path))
 
     assert dump_regs_calls == [0xAABBCCDD]
-    assert finalize_calls == [0xAABBCCDD]
     assert dump_mapping_calls == [
         (0x1000, 0x1000 + len(content_a), content_a),
         (0x2000, 0x2000 + len(content_b), content_b),

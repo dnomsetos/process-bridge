@@ -6,7 +6,7 @@
 
 #elif defined(__i386__)
 
-#include <linux/x86/snapshot.h>
+#include <linux/i386/snapshot.h>
 
 #else
 
