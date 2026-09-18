@@ -2,47 +2,34 @@ cmake_minimum_required(VERSION 3.20)
 
 project(process-bridge LANGUAGES C)
 
-set(CMAKE_EXPORT_COMPILE_COMMANDS
-    ON
-    CACHE INTERNAL "")
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 file(GLOB_RECURSE SRC_FILES CONFIGURE_DEPENDS
      "${CMAKE_CURRENT_SOURCE_DIR}/native/src/*.c")
 
 list(REMOVE_ITEM SRC_FILES "${CMAKE_CURRENT_SOURCE_DIR}/native/src/main.c")
 
-function(add_arch_targets ARCH_SUFFIX)
-  set(FLAGS ${ARGN})
+add_library(process-bridge-lib SHARED ${SRC_FILES})
 
-  set(LIB_NAME process-bridge-lib-${ARCH_SUFFIX})
-  set(EXE_NAME process-bridge-${ARCH_SUFFIX})
+target_include_directories(process-bridge-lib
+                           PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/native/include)
 
-  add_library(${LIB_NAME} STATIC ${SRC_FILES})
+target_compile_definitions(process-bridge-lib PRIVATE _GNU_SOURCE)
 
-  target_include_directories(${LIB_NAME}
-                             PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/native/include)
+add_executable(process-bridge native/src/main.c)
 
-  target_compile_definitions(${LIB_NAME} PRIVATE _GNU_SOURCE)
+set_target_properties(process-bridge-lib PROPERTIES OUTPUT_NAME
+                                                    process-bridge-lib)
 
-  target_compile_options(${LIB_NAME} PUBLIC ${FLAGS})
+set_target_properties(process-bridge PROPERTIES BUILD_RPATH "\$ORIGIN"
+                                                INSTALL_RPATH "\$ORIGIN")
 
-  target_link_options(${LIB_NAME} PUBLIC ${FLAGS})
+target_compile_definitions(process-bridge PRIVATE _GNU_SOURCE)
 
-  add_executable(${EXE_NAME} native/src/main.c)
+target_link_libraries(process-bridge PRIVATE process-bridge-lib)
 
-  target_compile_options(${EXE_NAME} PRIVATE ${FLAGS})
-
-  target_link_options(${EXE_NAME} PRIVATE ${FLAGS})
-
-  target_link_libraries(${EXE_NAME} PRIVATE ${LIB_NAME})
-
-  install(TARGETS ${EXE_NAME} DESTINATION process_bridge/bin)
-
-endfunction()
-
-add_arch_targets(x64 -m64)
-
-add_arch_targets(x86 -m32)
+install(TARGETS process-bridge-lib LIBRARY DESTINATION .)
+install(TARGETS process-bridge RUNTIME DESTINATION .)
 
 include(CTest)
 

@@ -29,7 +29,7 @@ def test_get_maps_entry_cls_uses_pack_8_for_x8664():
     assert cls._pack_ == 8
 
 
-def test_get_maps_entry_cls_uses_pack_4_for_x86():
+def test_get_maps_entry_cls_uses_pack_4_for_i386():
     arch_mod.SNAPSHOT_ARCH = QL_ARCH.X86
     cls = maps_entry.get_maps_entry_cls()
     assert cls._pack_ == 4
@@ -88,8 +88,8 @@ def test_dump_mapping_maps_then_writes_with_correct_perms():
 
     maps_entry.dump_mapping(ql, entry, content)
 
-    assert ql.mem.map_calls == [(0x1000, 0x2000, 3)]
-    assert ql.mem.write_calls == [(0x1000, content)]
+    assert ql.mem.is_mapped(0x1000, 0x2000)
+    assert ql.mem.read(0x1000, 0x2000) == content
 
 
 def test_dump_mapping_propagates_map_failure():

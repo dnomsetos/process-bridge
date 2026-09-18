@@ -1,10 +1,10 @@
-from typing import Callable, Optional
+from typing import Callable
 
 from qiling import Qiling
 from qiling.const import QL_ARCH
 
 from .x86_64 import user_regs_struct as x8664
-from .x86 import user_regs_struct as x86
+from .i386 import user_regs_struct as i386
 from .log import get_logger
 
 log = get_logger(__name__)
@@ -20,12 +20,10 @@ def get_arch_impl(target_arch: QL_ARCH) -> None:
         case QL_ARCH.X8664:
             globals()["SnapshotInfo"] = x8664.SnapshotInfo
             globals()["dump_regs"] = x8664.dump_regs
-            globals()["finalize"] = lambda ql, snapshot: None
             globals()["SNAPSHOT_ARCH"] = QL_ARCH.X8664
         case QL_ARCH.X86:
-            globals()["SnapshotInfo"] = x86.SnapshotInfo
-            globals()["dump_regs"] = x86.dump_regs
-            globals()["finalize"] = x86.restore_tls
+            globals()["SnapshotInfo"] = i386.SnapshotInfo
+            globals()["dump_regs"] = i386.dump_regs
             globals()["SNAPSHOT_ARCH"] = QL_ARCH.X86
         case _:
             raise ValueError(

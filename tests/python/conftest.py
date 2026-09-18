@@ -15,6 +15,9 @@ def _install_fake_unicorn() -> None:
     unicorn_mod.UC_PROT_READ = 1
     unicorn_mod.UC_PROT_WRITE = 2
     unicorn_mod.UC_PROT_EXEC = 4
+    unicorn_mod.UC_PROT_ALL = (
+        unicorn_mod.UC_PROT_READ | unicorn_mod.UC_PROT_WRITE | unicorn_mod.UC_PROT_EXEC
+    )
 
     class UcError(Exception):
         def __init__(self, errno: int = 0) -> None:
@@ -42,7 +45,7 @@ def _install_fake_qiling() -> None:
 
     class QL_ARCH(enum.Enum):
         X8664 = "x8664"
-        X86 = "x86"
+        X86 = "i386"
         ARM = "arm"
 
     class QL_OS(enum.Enum):
