@@ -19,6 +19,8 @@ def _install_fake_unicorn() -> None:
         unicorn_mod.UC_PROT_READ | unicorn_mod.UC_PROT_WRITE | unicorn_mod.UC_PROT_EXEC
     )
 
+    unicorn_mod.UC_HOOK_CODE = 4
+
     class UcError(Exception):
         def __init__(self, errno: int = 0) -> None:
             self.errno = errno

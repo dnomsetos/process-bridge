@@ -25,7 +25,7 @@ def read_struct(cls: type[T], view: memoryview, offset: int) -> tuple[T, int]:
     return obj, offset + size
 
 
-def load_snapshot(ql: Qiling, snapshot_path: str) -> None:
+def load_snapshot(ql: Qiling, snapshot_path: str) -> int:
     try:
         file = open(snapshot_path, "rb")
     except OSError as err:
@@ -41,6 +41,8 @@ def load_snapshot(ql: Qiling, snapshot_path: str) -> None:
             ) from err
 
         view = memoryview(mm)
+
+        entry = -1
 
         try:
             snapshot, offset = read_struct(arch.SnapshotInfo, view, 0)
@@ -81,7 +83,7 @@ def load_snapshot(ql: Qiling, snapshot_path: str) -> None:
                 offset += size
                 mappings_loaded += 1
 
-            arch.dump_regs(ql, snapshot)
+            entry = arch.dump_regs(ql, snapshot)
 
             log.info(
                 "loaded snapshot '%s': %d mapping(s), %d bytes total",
@@ -95,3 +97,5 @@ def load_snapshot(ql: Qiling, snapshot_path: str) -> None:
         finally:
             view.release()
             mm.close()
+
+        return entry

@@ -282,34 +282,6 @@ This makes glibc avoid using the specified CPU features when selecting its
 optimized implementations, which can prevent unsupported instructions from
 being executed by the restored process.
 
-## Native i386 Snapshot Compatibility
-
-When creating snapshots on a **native i386 Linux system**, rather than from a
-32-bit process running on an `x86_64` kernel, the TLS GDT descriptor layout is
-different.
-
-For native i386 kernels, the TLS descriptors occupy GDT entries `6` through
-`8`. Linux defines this layout with:
-
-```c
-#define GDT_ENTRY_TLS_MIN 6
-#define GDT_ENTRY_TLS_MAX (GDT_ENTRY_TLS_MIN + GDT_ENTRY_TLS_ENTRIES - 1)
-```
-
-On an `x86_64` kernel, the corresponding TLS entries are `12` through `14`.
-
-Therefore, when creating snapshots on a native i386 system, the following
-values must be used instead of the x86_64 values if [file](native/src/linux/x86/snapshot.c):
-
-```c
-#define GDT_ENTRY_TLS_MIN 6
-#define GDT_ENTRY_TLS_MAX 8
-```
-
-This is necessary for the snapshot loader to restore the TLS descriptors from
-the correct GDT entries. Using the x86_64 values on a native i386 system can
-result in incorrect segment state being captured or restored.
-
 ## Project Status
 
 `process-bridge` is a new project and is currently in an early stage of

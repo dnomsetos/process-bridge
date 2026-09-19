@@ -2,7 +2,7 @@ import struct
 
 from ctypes import Structure, c_uint32, c_uint
 from qiling import Qiling
-from unicorn import UC_PROT_ALL
+from unicorn import UC_PROT_ALL, UC_HOOK_CODE
 from unicorn.x86_const import *
 from qiling.arch.x86_const import (
     QL_X86_A_PRESENT,
@@ -125,7 +125,7 @@ def user_desc_to_gdt(desc: UserDesc) -> bytes:
     return descriptor.to_bytes(8, "little")
 
 
-def enter_ring3(ql: Qiling, snapshot_info: SnapshotInfo) -> None:
+def enter_ring3(ql: Qiling, snapshot_info: SnapshotInfo) -> int:
     regs = snapshot_info.regs
 
     if not ql.mem.is_mapped(regs.eip, 1):
@@ -152,39 +152,45 @@ def enter_ring3(ql: Qiling, snapshot_info: SnapshotInfo) -> None:
 
     frame = trampoline + FRAME_OFFSET
 
-    try:
-        ql.mem.write(gdt_base + scratch_idx * 8, RAW_R0_DS_DESCRIPTOR)
-        ql.mem.write(trampoline, IRET32)
-        ql.mem.write(
-            frame,
-            struct.pack("<IIIII", regs.eip, regs.xcs, regs.eflags, regs.esp, regs.xss),
-        )
+    ql.mem.write(gdt_base + scratch_idx * 8, RAW_R0_DS_DESCRIPTOR)
+    ql.mem.write(trampoline, IRET32)
+    ql.mem.write(
+        frame,
+        struct.pack("<IIIII", regs.eip, regs.xcs, regs.eflags, regs.esp, regs.xss),
+    )
 
-        ql.uc.reg_write(UC_X86_REG_SS, scratch_idx << 3)
-        ql.arch.regs.esp = frame
+    ql.uc.reg_write(UC_X86_REG_SS, scratch_idx << 3)
+    ql.arch.regs.esp = frame
 
-        log.debug(
-            "iret trampoline at %#x, frame at %#x -> %#x:%#x (ss:esp %#x:%#x)",
-            trampoline,
-            frame,
-            regs.xcs,
-            regs.eip,
-            regs.xss,
-            regs.esp,
-        )
+    log.debug(
+        "iret trampoline at %#x, frame at %#x -> %#x:%#x (ss:esp %#x:%#x)",
+        trampoline,
+        frame,
+        regs.xcs,
+        regs.eip,
+        regs.xss,
+        regs.esp,
+    )
 
-        ql.uc.emu_start(trampoline, 0, count=1)
-    finally:
+    handle = []
+
+    def verify_and_cleanup(uc, address, size, user_data):
+        cs = uc.reg_read(UC_X86_REG_CS)
+        ss = uc.reg_read(UC_X86_REG_SS)
+
+        uc.hook_del(handle[0])
+
+        if cs & 0b11 != 0b11 or ss & 0b11 != 0b11:
+            raise RuntimeError(f"ring3 switch failed: cs={cs:#x} ss={ss:#x}")
+
         ql.mem.write(gdt_base + scratch_idx * 8, NULL_DESCRIPTOR)
         ql.mem.unmap(trampoline, TRAMPOLINE_SIZE)
 
-    cs = ql.uc.reg_read(UC_X86_REG_CS)
-    ss = ql.uc.reg_read(UC_X86_REG_SS)
+    handle.append(
+        ql.uc.hook_add(UC_HOOK_CODE, verify_and_cleanup, begin=regs.eip, end=regs.eip)
+    )
 
-    if cs & 0b11 != 0b11 or ss & 0b11 != 0b11 or ql.arch.regs.eip != regs.eip:
-        raise RuntimeError(
-            f"ring3 switch failed: cs={cs:#x} ss={ss:#x} eip={ql.arch.regs.eip:#x}"
-        )
+    return trampoline
 
 
 def read_gdt(ql: Qiling, base: int, count: int = 16) -> None:
@@ -214,7 +220,7 @@ def read_gdt(ql: Qiling, base: int, count: int = 16) -> None:
         )
 
 
-def dump_regs(ql: Qiling, snapshot_info: SnapshotInfo) -> None:
+def dump_regs(ql: Qiling, snapshot_info: SnapshotInfo) -> int:
     if (
         snapshot_info.regs.xss != snapshot_info.regs.xds
         or snapshot_info.regs.xds != snapshot_info.regs.xes
@@ -252,7 +258,7 @@ def dump_regs(ql: Qiling, snapshot_info: SnapshotInfo) -> None:
     ql.uc.reg_write(UC_X86_REG_FS, snapshot_info.regs.xfs)
     ql.uc.reg_write(UC_X86_REG_GS, snapshot_info.regs.xgs)
 
-    enter_ring3(ql, snapshot_info)
+    trampoline = enter_ring3(ql, snapshot_info)
 
     log.debug(
         "restored regs: eax=%#x ebx=%#x ecx=%#x edx=%#x esi=%#x edi=%#x "
@@ -295,3 +301,5 @@ def dump_regs(ql: Qiling, snapshot_info: SnapshotInfo) -> None:
             snapshot_info.tls[i].useable,
         )
     read_gdt(ql, gdt_base)
+
+    return trampoline

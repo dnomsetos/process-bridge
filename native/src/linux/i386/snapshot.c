@@ -7,8 +7,9 @@
 #include <linux/i386/snapshot.h>
 #include <log.h>
 
-#define GDT_ENTRY_TLS_MIN 12
-#define GDT_ENTRY_TLS_MAX 14
+#define GDT_ENTRY_TLS_MIN_TRUE_I386 6
+#define GDT_ENTRY_TLS_MIN_COMP_MODE 12
+#define GDT_ENTRY_TLS_ENTRIES 3
 
 void create_snapshot(snapshot_info_t *snapshot,
                      const breakpoint_t *breakpoint) {
@@ -18,9 +19,25 @@ void create_snapshot(snapshot_info_t *snapshot,
     LOG_FATAL_ERRNO("ptrace(PTRACE_GETREGS, pid=%d) failed", pid);
   }
 
-  for (int i = GDT_ENTRY_TLS_MIN; i <= GDT_ENTRY_TLS_MAX; ++i) {
+  int start = GDT_ENTRY_TLS_MIN_TRUE_I386 + 1;
+  int end = start + GDT_ENTRY_TLS_ENTRIES - 1;
+  int gdt_entry_tls_min = GDT_ENTRY_TLS_MIN_TRUE_I386;
+
+  if (ptrace(PTRACE_GET_THREAD_AREA, pid, gdt_entry_tls_min,
+             &snapshot->tls[0]) == -1) {
+    gdt_entry_tls_min = GDT_ENTRY_TLS_MIN_COMP_MODE;
+
+    start = GDT_ENTRY_TLS_MIN_COMP_MODE;
+    end = start + GDT_ENTRY_TLS_ENTRIES;
+
+    LOG_DEBUG("using compatibility mode gdt entry for tls");
+  } else {
+    LOG_DEBUG("using true i386 mode gdt entry for tls");
+  }
+
+  for (int i = start; i < end; ++i) {
     if (ptrace(PTRACE_GET_THREAD_AREA, pid, i,
-               &snapshot->tls[i - GDT_ENTRY_TLS_MIN]) == -1) {
+               &snapshot->tls[i - gdt_entry_tls_min]) == -1) {
       LOG_FATAL_ERRNO("ptrace(PTRACE_GET_THREAD_AREA, pid=%d, index=%d) failed",
                       pid, i);
     }
@@ -45,7 +62,7 @@ void create_snapshot(snapshot_info_t *snapshot,
   LOG_DEBUG("xfs: 0x%lx", snapshot->regs.xfs);
   LOG_DEBUG("xgs: 0x%lx", snapshot->regs.xgs);
 
-  for (int i = 0; i < GDT_ENTRY_TLS_MAX - GDT_ENTRY_TLS_MIN; ++i) {
+  for (int i = 0; i < GDT_ENTRY_TLS_ENTRIES; ++i) {
     LOG_DEBUG(
         "gdt[%d]:\n"
         "  user_desc {\n"
@@ -59,7 +76,7 @@ void create_snapshot(snapshot_info_t *snapshot,
         "    seg_not_present = %u\n"
         "    useable         = %u\n"
         "}\n",
-        i + GDT_ENTRY_TLS_MIN, snapshot->tls[i].entry_number,
+        i + gdt_entry_tls_min, snapshot->tls[i].entry_number,
         snapshot->tls[i].entry_number, snapshot->tls[i].base_addr,
         snapshot->tls[i].base_addr, snapshot->tls[i].limit,
         snapshot->tls[i].limit, snapshot->tls[i].seg_32bit,

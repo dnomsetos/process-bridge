@@ -4,9 +4,13 @@ import struct
 from ctypes import sizeof
 
 import pytest
+import unicorn
+from fakes import FakeGdtm, FakeQiling
+
+if not hasattr(unicorn, "UC_HOOK_CODE"):
+    unicorn.UC_HOOK_CODE = 1
 
 import process_bridge.i386.user_regs_struct as user_regs
-from fakes import FakeGdtm, FakeQiling
 
 
 TRAMPOLINE_ADDR = 0x100000
@@ -32,8 +36,10 @@ REG_SS = 13
 class FakeUc:
     def __init__(self) -> None:
         self.registers: dict[int, int] = {}
-        self.emu_start_calls: list[tuple[int, int, int]] = []
-        self.emu_start_hook = None
+        self.hooks: dict[int, tuple[int, object, int, int, object]] = {}
+        self.hook_add_calls: list[tuple[int, object, int, int, object]] = []
+        self.hook_del_calls: list[int] = []
+        self._next_hook = 1
 
     def reg_write(self, reg: int, value: int) -> None:
         self.registers[reg] = value
@@ -41,17 +47,36 @@ class FakeUc:
     def reg_read(self, reg: int) -> int:
         return self.registers.get(reg, 0)
 
-    def emu_start(
+    def hook_add(
         self,
-        begin: int,
-        until: int,
+        hook_type: int,
+        callback: object,
         *,
-        count: int,
-    ) -> None:
-        self.emu_start_calls.append((begin, until, count))
+        begin: int = 1,
+        end: int = 0,
+        user_data: object = None,
+    ) -> int:
+        handle = self._next_hook
+        self._next_hook += 1
 
-        if self.emu_start_hook is not None:
-            self.emu_start_hook(begin, until, count)
+        record = (hook_type, callback, begin, end, user_data)
+        self.hooks[handle] = record
+        self.hook_add_calls.append(record)
+
+        return handle
+
+    def hook_del(self, handle: int) -> None:
+        self.hook_del_calls.append(handle)
+        del self.hooks[handle]
+
+    def invoke_hook(
+        self,
+        handle: int,
+        address: int,
+        size: int = 1,
+    ) -> None:
+        _, callback, _, _, user_data = self.hooks[handle]
+        callback(self, address, size, user_data)
 
 
 @pytest.fixture
@@ -74,6 +99,7 @@ def ql(monkeypatch: pytest.MonkeyPatch) -> FakeQiling:
         "UC_X86_REG_GS": REG_GS,
         "UC_X86_REG_CS": REG_CS,
         "UC_X86_REG_SS": REG_SS,
+        "UC_HOOK_CODE": unicorn.UC_HOOK_CODE,
     }.items():
         monkeypatch.setattr(user_regs, name, value, raising=False)
 
@@ -100,12 +126,10 @@ def ql(monkeypatch: pytest.MonkeyPatch) -> FakeQiling:
         info: str = "",
     ) -> int:
         del minaddr, info
-
         result.mem.map(next_addr, size, perms)
         return next_addr
 
     result.mem.map_anywhere = map_anywhere
-
     result.mem.map(GDT_BASE, 16 * 8)
 
     return result
@@ -113,7 +137,6 @@ def ql(monkeypatch: pytest.MonkeyPatch) -> FakeQiling:
 
 def make_snapshot() -> user_regs.SnapshotInfo:
     snapshot = user_regs.SnapshotInfo()
-
     snapshot.regs.ebx = 0x11111111
     snapshot.regs.ecx = 0x22222222
     snapshot.regs.edx = 0x33333333
@@ -126,7 +149,6 @@ def make_snapshot() -> user_regs.SnapshotInfo:
     snapshot.regs.eip = CODE_ADDR
     snapshot.regs.esp = STACK_ADDR
     snapshot.regs.eflags = 0x202
-
     snapshot.regs.xcs = 5 << 3 | 3
     snapshot.regs.xss = 2 << 3 | 3
     snapshot.regs.xds = 2 << 3 | 3
@@ -135,6 +157,22 @@ def make_snapshot() -> user_regs.SnapshotInfo:
     snapshot.regs.xgs = 7 << 3 | 3
 
     return snapshot
+
+
+def trigger_ring3_hook(
+    ql: FakeQiling,
+    snapshot: user_regs.SnapshotInfo,
+) -> int:
+    uc: FakeUc = ql.uc
+
+    assert len(uc.hook_add_calls) == 1
+    handle = next(iter(uc.hooks))
+
+    uc.reg_write(REG_CS, snapshot.regs.xcs)
+    uc.reg_write(REG_SS, snapshot.regs.xss)
+    uc.invoke_hook(handle, snapshot.regs.eip)
+
+    return handle
 
 
 def test_user_regs_struct_matches_i386_linux_layout():
@@ -268,10 +306,10 @@ def test_user_desc_to_gdt_uses_writable_user_data_access():
     assert access == 0xF2
 
     # P=1, DPL=3, S=1, data, writable.
-    assert access & 0x80  # P
-    assert access & 0x60 == 0x60  # DPL=3
-    assert access & 0x10  # S
-    assert access & 0x02  # Writable data
+    assert access & 0x80
+    assert access & 0x60 == 0x60
+    assert access & 0x10
+    assert access & 0x02
 
 
 def test_user_desc_to_gdt_preserves_20_bit_limit():
@@ -312,24 +350,7 @@ def test_dump_regs_restores_gprs_and_eflags(
     ql: FakeQiling,
 ):
     snapshot = make_snapshot()
-
     ql.mem.map(CODE_ADDR, 1)
-
-    uc: FakeUc = ql.uc
-
-    def emulate_iret(
-        _begin: int,
-        _until: int,
-        _count: int,
-    ) -> None:
-        ql.arch.regs.eip = snapshot.regs.eip
-        ql.arch.regs.esp = snapshot.regs.esp
-        ql.arch.regs.eflags = snapshot.regs.eflags
-
-        uc.reg_write(REG_CS, snapshot.regs.xcs)
-        uc.reg_write(REG_SS, snapshot.regs.xss)
-
-    uc.emu_start_hook = emulate_iret
 
     user_regs.dump_regs(ql, snapshot)
 
@@ -341,63 +362,39 @@ def test_dump_regs_restores_gprs_and_eflags(
     assert ql.arch.regs.edi == 0x55555555
     assert ql.arch.regs.ebp == 0x66666666
     assert ql.arch.regs.eflags == 0x202
-    assert ql.arch.regs.esp == snapshot.regs.esp
-    assert ql.arch.regs.eip == snapshot.regs.eip
+
+    assert ql.arch.regs.eip == 0
+    assert ql.arch.regs.esp == (
+        TRAMPOLINE_ADDR + user_regs.FRAME_OFFSET
+    )
+
+    assert ql.uc.reg_read(REG_SS) == 12 << 3
 
 
 def test_dump_regs_restores_segment_registers(
     ql: FakeQiling,
 ):
     snapshot = make_snapshot()
-
     ql.mem.map(CODE_ADDR, 1)
-
-    uc: FakeUc = ql.uc
-
-    def emulate_iret(
-        _begin: int,
-        _until: int,
-        _count: int,
-    ) -> None:
-        ql.arch.regs.eip = snapshot.regs.eip
-        ql.arch.regs.esp = snapshot.regs.esp
-
-        uc.reg_write(REG_CS, snapshot.regs.xcs)
-        uc.reg_write(REG_SS, snapshot.regs.xss)
-
-    uc.emu_start_hook = emulate_iret
 
     user_regs.dump_regs(ql, snapshot)
 
-    assert uc.reg_read(REG_DS) == snapshot.regs.xds
-    assert uc.reg_read(REG_ES) == snapshot.regs.xes
-    assert uc.reg_read(REG_FS) == snapshot.regs.xfs
-    assert uc.reg_read(REG_GS) == snapshot.regs.xgs
-    assert uc.reg_read(REG_CS) == snapshot.regs.xcs
-    assert uc.reg_read(REG_SS) == snapshot.regs.xss
+    assert ql.uc.reg_read(REG_DS) == snapshot.regs.xds
+    assert ql.uc.reg_read(REG_ES) == snapshot.regs.xes
+    assert ql.uc.reg_read(REG_FS) == snapshot.regs.xfs
+    assert ql.uc.reg_read(REG_GS) == snapshot.regs.xgs
+
+    # CS/SS are switched by IRET later. SS is temporarily the scratch
+    # ring-0 stack selector until then.
+    assert ql.uc.reg_read(REG_CS) == 0
+    assert ql.uc.reg_read(REG_SS) == 12 << 3
 
 
 def test_dump_regs_writes_code_and_data_descriptors(
     ql: FakeQiling,
 ):
     snapshot = make_snapshot()
-
     ql.mem.map(CODE_ADDR, 1)
-
-    uc: FakeUc = ql.uc
-
-    def emulate_iret(
-        _begin: int,
-        _until: int,
-        _count: int,
-    ) -> None:
-        ql.arch.regs.eip = snapshot.regs.eip
-        ql.arch.regs.esp = snapshot.regs.esp
-
-        uc.reg_write(REG_CS, snapshot.regs.xcs)
-        uc.reg_write(REG_SS, snapshot.regs.xss)
-
-    uc.emu_start_hook = emulate_iret
 
     user_regs.dump_regs(ql, snapshot)
 
@@ -414,7 +411,7 @@ def test_dump_regs_writes_code_and_data_descriptors(
     assert cs_raw == user_regs.RAW_CS_DESCRIPTOR
 
 
-def test_dump_regs_restores_nonpresent_tls_as_zero_descriptor(
+def test_dump_regs_restores_nonpresent_tls_as_untouched_descriptor(
     ql: FakeQiling,
 ):
     snapshot = make_snapshot()
@@ -423,21 +420,6 @@ def test_dump_regs_restores_nonpresent_tls_as_zero_descriptor(
     snapshot.tls[0].seg_not_present = 1
 
     ql.mem.map(CODE_ADDR, 1)
-
-    uc: FakeUc = ql.uc
-
-    def emulate_iret(
-        _begin: int,
-        _until: int,
-        _count: int,
-    ) -> None:
-        ql.arch.regs.eip = snapshot.regs.eip
-        ql.arch.regs.esp = snapshot.regs.esp
-
-        uc.reg_write(REG_CS, snapshot.regs.xcs)
-        uc.reg_write(REG_SS, snapshot.regs.xss)
-
-    uc.emu_start_hook = emulate_iret
 
     ql.mem.write(
         GDT_BASE + 6 * 8,
@@ -465,21 +447,6 @@ def test_dump_regs_restores_present_tls_descriptor(
 
     ql.mem.map(CODE_ADDR, 1)
 
-    uc: FakeUc = ql.uc
-
-    def emulate_iret(
-        _begin: int,
-        _until: int,
-        _count: int,
-    ) -> None:
-        ql.arch.regs.eip = snapshot.regs.eip
-        ql.arch.regs.esp = snapshot.regs.esp
-
-        uc.reg_write(REG_CS, snapshot.regs.xcs)
-        uc.reg_write(REG_SS, snapshot.regs.xss)
-
-    uc.emu_start_hook = emulate_iret
-
     user_regs.dump_regs(ql, snapshot)
 
     actual = ql.mem.read(
@@ -493,53 +460,29 @@ def test_dump_regs_restores_present_tls_descriptor(
     assert actual == expected
 
 
-def test_enter_ring3_builds_correct_iret_frame(
+def test_enter_ring3_builds_iret_frame_and_registers_code_hook(
     ql: FakeQiling,
 ):
     snapshot = make_snapshot()
-
     ql.mem.map(CODE_ADDR, 1)
 
     uc: FakeUc = ql.uc
-    captured: dict[str, object] = {}
 
-    def emulate_iret(
-        begin: int,
-        until: int,
-        count: int,
-    ) -> None:
-        captured["begin"] = begin
-        captured["until"] = until
-        captured["count"] = count
+    trampoline = user_regs.enter_ring3(ql, snapshot)
 
-        frame = ql.mem.read(
-            TRAMPOLINE_ADDR + user_regs.FRAME_OFFSET,
-            20,
-        )
+    assert trampoline == TRAMPOLINE_ADDR
+    assert ql.mem.is_mapped(
+        TRAMPOLINE_ADDR,
+        user_regs.TRAMPOLINE_SIZE,
+    )
 
-        captured["frame"] = frame
+    assert ql.mem.read(TRAMPOLINE_ADDR, 1) == user_regs.IRET32
 
-        eip, cs, eflags, esp, ss = struct.unpack(
-            "<IIIII",
-            frame,
-        )
-
-        ql.arch.regs.eip = eip
-        ql.arch.regs.esp = esp
-        ql.arch.regs.eflags = eflags
-
-        uc.reg_write(REG_CS, cs)
-        uc.reg_write(REG_SS, ss)
-
-    uc.emu_start_hook = emulate_iret
-
-    user_regs.enter_ring3(ql, snapshot)
-
-    assert captured["begin"] == TRAMPOLINE_ADDR
-    assert captured["until"] == 0
-    assert captured["count"] == 1
-
-    assert captured["frame"] == struct.pack(
+    frame = ql.mem.read(
+        TRAMPOLINE_ADDR + user_regs.FRAME_OFFSET,
+        20,
+    )
+    assert frame == struct.pack(
         "<IIIII",
         snapshot.regs.eip,
         snapshot.regs.xcs,
@@ -548,16 +491,39 @@ def test_enter_ring3_builds_correct_iret_frame(
         snapshot.regs.xss,
     )
 
-    assert ql.arch.regs.eip == snapshot.regs.eip
-    assert ql.arch.regs.esp == snapshot.regs.esp
-    assert ql.arch.regs.eflags == snapshot.regs.eflags
+    assert ql.arch.regs.eip == 0
+    assert ql.arch.regs.esp == (
+        TRAMPOLINE_ADDR + user_regs.FRAME_OFFSET
+    )
+    assert uc.reg_read(REG_SS) == 12 << 3
 
-    assert uc.reg_read(REG_CS) == snapshot.regs.xcs
-    assert uc.reg_read(REG_SS) == snapshot.regs.xss
+    assert len(uc.hook_add_calls) == 1
 
-    assert uc.emu_start_calls == [
-        (TRAMPOLINE_ADDR, 0, 1),
-    ]
+    hook_type, _callback, begin, end, user_data = uc.hook_add_calls[0]
+    assert hook_type == unicorn.UC_HOOK_CODE
+    assert begin == snapshot.regs.eip
+    assert end == snapshot.regs.eip
+    assert user_data is None
+
+
+def test_enter_ring3_cleanup_after_successful_ring3_switch(
+    ql: FakeQiling,
+):
+    snapshot = make_snapshot()
+    ql.mem.map(CODE_ADDR, 1)
+
+    trampoline = user_regs.enter_ring3(ql, snapshot)
+
+    assert trampoline == TRAMPOLINE_ADDR
+    assert ql.mem.is_mapped(
+        TRAMPOLINE_ADDR,
+        user_regs.TRAMPOLINE_SIZE,
+    )
+
+    handle = trigger_ring3_hook(ql, snapshot)
+
+    assert handle in ql.uc.hook_del_calls
+    assert ql.uc.hooks == {}
 
     assert not ql.mem.is_mapped(
         TRAMPOLINE_ADDR,
@@ -569,43 +535,44 @@ def test_enter_ring3_builds_correct_iret_frame(
         8,
     ) == user_regs.NULL_DESCRIPTOR
 
+    assert ql.uc.reg_read(REG_CS) == snapshot.regs.xcs
+    assert ql.uc.reg_read(REG_SS) == snapshot.regs.xss
 
-def test_enter_ring3_writes_ring0_stack_descriptor_before_iret(
+
+def test_enter_ring3_detects_failed_ring3_switch(
     ql: FakeQiling,
 ):
     snapshot = make_snapshot()
-
     ql.mem.map(CODE_ADDR, 1)
-
-    uc: FakeUc = ql.uc
-    captured: dict[str, bytes] = {}
-
-    def emulate_iret(
-        _begin: int,
-        _until: int,
-        _count: int,
-    ) -> None:
-        captured["descriptor"] = ql.mem.read(
-            GDT_BASE + 12 * 8,
-            8,
-        )
-
-        ql.arch.regs.eip = snapshot.regs.eip
-        ql.arch.regs.esp = snapshot.regs.esp
-
-        uc.reg_write(REG_CS, snapshot.regs.xcs)
-        uc.reg_write(REG_SS, snapshot.regs.xss)
-
-    uc.emu_start_hook = emulate_iret
 
     user_regs.enter_ring3(ql, snapshot)
 
-    assert captured["descriptor"] == user_regs.RAW_R0_DS_DESCRIPTOR
+    uc: FakeUc = ql.uc
+    handle = next(iter(uc.hooks))
 
-    assert ql.arch.regs.eip == snapshot.regs.eip
-    assert ql.arch.regs.esp == snapshot.regs.esp
-    assert uc.reg_read(REG_CS) == snapshot.regs.xcs
-    assert uc.reg_read(REG_SS) == snapshot.regs.xss
+    uc.reg_write(REG_CS, 0x08)
+    uc.reg_write(REG_SS, 0x10)
+
+    with pytest.raises(
+        RuntimeError,
+        match="ring3 switch failed",
+    ):
+        uc.invoke_hook(handle, snapshot.regs.eip)
+
+    # The callback deletes the hook before checking privilege levels,
+    # so failure leaves the trampoline and scratch descriptor intact.
+    assert uc.hook_del_calls == [handle]
+    assert uc.hooks == {}
+
+    assert ql.mem.is_mapped(
+        TRAMPOLINE_ADDR,
+        user_regs.TRAMPOLINE_SIZE,
+    )
+
+    assert ql.mem.read(
+        GDT_BASE + 12 * 8,
+        8,
+    ) == user_regs.RAW_R0_DS_DESCRIPTOR
 
 
 def test_enter_ring3_raises_when_eip_is_not_mapped(
@@ -639,7 +606,6 @@ def test_enter_ring3_refuses_zero_trampoline_address(
     ql: FakeQiling,
 ):
     snapshot = make_snapshot()
-
     ql.mem.map(CODE_ADDR, 1)
 
     def map_anywhere(
@@ -660,110 +626,37 @@ def test_enter_ring3_refuses_zero_trampoline_address(
         user_regs.enter_ring3(ql, snapshot)
 
 
-def test_enter_ring3_cleans_up_after_emulation_error(
+def test_enter_ring3_registers_cleanup_hook_for_exact_target_eip(
     ql: FakeQiling,
 ):
     snapshot = make_snapshot()
-
     ql.mem.map(CODE_ADDR, 1)
 
-    uc: FakeUc = ql.uc
+    user_regs.enter_ring3(ql, snapshot)
 
-    def fail_emulation(
-        *_args: object,
-        **_kwargs: object,
-    ) -> None:
-        raise RuntimeError("emulation failed")
+    hook_type, _callback, begin, end, _user_data = ql.uc.hook_add_calls[0]
 
-    uc.emu_start_hook = fail_emulation
-
-    with pytest.raises(
-        RuntimeError,
-        match="emulation failed",
-    ):
-        user_regs.enter_ring3(ql, snapshot)
-
-    assert not ql.mem.is_mapped(
-        TRAMPOLINE_ADDR,
-        user_regs.TRAMPOLINE_SIZE,
-    )
-
-    assert ql.mem.read(
-        GDT_BASE + 12 * 8,
-        8,
-    ) == user_regs.NULL_DESCRIPTOR
-
-
-def test_enter_ring3_detects_failed_ring3_switch(
-    ql: FakeQiling,
-):
-    snapshot = make_snapshot()
-
-    ql.mem.map(CODE_ADDR, 1)
-
-    uc: FakeUc = ql.uc
-
-    def emulate_broken_iret(
-        _begin: int,
-        _until: int,
-        _count: int,
-    ) -> None:
-        ql.arch.regs.eip = 0xDEADBEEF
-        ql.arch.regs.esp = snapshot.regs.esp
-
-        uc.reg_write(REG_CS, 0x08)
-        uc.reg_write(REG_SS, 0x10)
-
-    uc.emu_start_hook = emulate_broken_iret
-
-    with pytest.raises(
-        RuntimeError,
-        match="ring3 switch failed",
-    ):
-        user_regs.enter_ring3(ql, snapshot)
-
-    assert not ql.mem.is_mapped(
-        TRAMPOLINE_ADDR,
-        user_regs.TRAMPOLINE_SIZE,
-    )
-
-    assert ql.mem.read(
-        GDT_BASE + 12 * 8,
-        8,
-    ) == user_regs.NULL_DESCRIPTOR
+    assert hook_type == unicorn.UC_HOOK_CODE
+    assert begin == CODE_ADDR
+    assert end == CODE_ADDR
 
 
 def test_enter_ring3_requires_user_cs_and_ss(
     ql: FakeQiling,
 ):
     snapshot = make_snapshot()
-
     ql.mem.map(CODE_ADDR, 1)
 
+    user_regs.enter_ring3(ql, snapshot)
+
     uc: FakeUc = ql.uc
+    handle = next(iter(uc.hooks))
 
-    def emulate_wrong_privilege(
-        _begin: int,
-        _until: int,
-        _count: int,
-    ) -> None:
-        ql.arch.regs.eip = snapshot.regs.eip
-        ql.arch.regs.esp = snapshot.regs.esp
-
-        uc.reg_write(
-            REG_CS,
-            snapshot.regs.xcs & ~0x3,
-        )
-        uc.reg_write(
-            REG_SS,
-            snapshot.regs.xss & ~0x3,
-        )
-
-    uc.emu_start_hook = emulate_wrong_privilege
+    uc.reg_write(REG_CS, snapshot.regs.xcs & ~0x3)
+    uc.reg_write(REG_SS, snapshot.regs.xss & ~0x3)
 
     with pytest.raises(
         RuntimeError,
         match="ring3 switch failed",
     ):
-        user_regs.enter_ring3(ql, snapshot)
-
+        uc.invoke_hook(handle, snapshot.regs.eip)

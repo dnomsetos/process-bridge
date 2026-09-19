@@ -72,7 +72,7 @@ class SnapshotInfo(Structure):
     _fields_ = [("regs", UserRegsStruct)]
 
 
-def dump_regs(ql: Qiling, snapshot_info: SnapshotInfo) -> None:
+def dump_regs(ql: Qiling, snapshot_info: SnapshotInfo) -> int:
     ql.arch.regs.rax = snapshot_info.regs.rax
     ql.arch.regs.rbx = snapshot_info.regs.rbx
     ql.arch.regs.rcx = snapshot_info.regs.rcx
@@ -119,3 +119,5 @@ def dump_regs(ql: Qiling, snapshot_info: SnapshotInfo) -> None:
         snapshot_info.regs.fs_base,
         snapshot_info.regs.gs_base,
     )
+
+    return ql.arch.regs.rip

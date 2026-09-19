@@ -47,9 +47,7 @@ def from_snapshot(
     unmapped = clean_vas(ql, ql_arch)
     log.debug("unmapped %d default qiling mapping(s)", unmapped)
 
-    load_snapshot(ql, snapshot_path)
-
-    entry = ql.arch.regs.rip if ql_arch == QL_ARCH.X8664 else ql.arch.regs.eip
+    entry = load_snapshot(ql, snapshot_path)
     log.info("snapshot loaded, entry point = %#x", entry)
 
     return ql, entry
