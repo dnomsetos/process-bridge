@@ -1,41 +1,27 @@
 [build-system]
 requires = [
-    "scikit-build-core>=0.10",
+  "scikit-build-core>=0.11",
 ]
 build-backend = "scikit_build_core.build"
-
 
 [project]
 name = "process-bridge"
 version = "0.1.0"
-description = "Process snapshot and Qiling loader"
-readme = "README.md"
-requires-python = ">=3.10"
+description = "Process snapshotting and emulation framework"
+requires-python = ">=3.12"
 
 dependencies = [
-    "qiling",
+  "qiling",
 ]
+
+[project.scripts]
+process-bridge-x86_64-linux = "process_bridge.scripts:x86_64_linux"
+process-bridge-i386-linux = "process_bridge.scripts:i386_linux"
 
 
 [tool.scikit-build]
-wheel.packages = [
-    "loader/process_bridge"
-]
+cmake.version = ">=3.20"
+cmake.source-dir = "packaging"
+build-dir = "build/{wheel_tag}"
 
-cmake.build-type = "Release"
-
-
-[project.scripts]
-process-bridge-x64 = "process_bridge.scripts:run_x64"
-process-bridge-x86 = "process_bridge.scripts:run_x86"
-
-
-[project.optional-dependencies]
-test = [
-    "pytest>=8.0",
-]
-
-
-[tool.pytest.ini_options]
-testpaths = ["tests/python"]
-
+wheel.packages = ["loader/process_bridge"]

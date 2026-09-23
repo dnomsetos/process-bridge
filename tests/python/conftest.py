@@ -15,6 +15,11 @@ def _install_fake_unicorn() -> None:
     unicorn_mod.UC_PROT_READ = 1
     unicorn_mod.UC_PROT_WRITE = 2
     unicorn_mod.UC_PROT_EXEC = 4
+    unicorn_mod.UC_PROT_ALL = (
+        unicorn_mod.UC_PROT_READ | unicorn_mod.UC_PROT_WRITE | unicorn_mod.UC_PROT_EXEC
+    )
+
+    unicorn_mod.UC_HOOK_CODE = 4
 
     class UcError(Exception):
         def __init__(self, errno: int = 0) -> None:
@@ -27,6 +32,15 @@ def _install_fake_unicorn() -> None:
     x86_const_mod = types.ModuleType("unicorn.x86_const")
     sys.modules["unicorn.x86_const"] = x86_const_mod
     unicorn_mod.x86_const = x86_const_mod
+
+    x86_const_mod.UC_X86_REG_DS = 17
+    x86_const_mod.UC_X86_REG_CS = 11
+    x86_const_mod.UC_X86_REG_ES = 28
+    x86_const_mod.UC_X86_REG_FS = 32
+    x86_const_mod.UC_X86_REG_GS = 33
+    x86_const_mod.UC_X86_REG_SS = 49
+    x86_const_mod.UC_X86_REG_FS_BASE = 250
+    x86_const_mod.UC_X86_REG_GS_BASE = 251
 
 
 def _install_fake_qiling() -> None:
@@ -42,7 +56,7 @@ def _install_fake_qiling() -> None:
 
     class QL_ARCH(enum.Enum):
         X8664 = "x8664"
-        X86 = "x86"
+        X86 = "i386"
         ARM = "arm"
 
     class QL_OS(enum.Enum):

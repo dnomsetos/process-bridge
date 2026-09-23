@@ -1,0 +1,55 @@
+{
+  "version": 6,
+
+  "configurePresets": [
+    {
+      "name": "x86_64-linux",
+      "binaryDir": "${sourceDir}/build/x86_64-linux",
+      "cacheVariables": {
+	"CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_C_COMPILER_TARGET": "x86_64-pc-linux-gnu"
+      }
+    },
+
+    {
+      "name": "i386-linux",
+      "binaryDir": "${sourceDir}/build/i386-linux",
+      "cacheVariables": {
+	"CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_C_COMPILER_TARGET": "i386-pc-linux-gnu"
+      }
+    }
+  ],
+
+  "buildPresets": [
+    {
+      "name": "x86_64-linux",
+      "configurePreset": "x86_64-linux"
+    },
+
+    {
+      "name": "i386-linux",
+      "configurePreset": "i386-linux"
+    }
+  ],
+
+  "testPresets": [
+    {
+      "name": "x86_64-linux",
+      "configurePreset": "x86_64-linux",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+
+    {
+      "name": "i386-linux",
+      "configurePreset": "i386-linux",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

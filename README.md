@@ -2,121 +2,300 @@
 
 [![CI](https://github.com/dnomsetos/process-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/dnomsetos/process-bridge/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A tool for snapshotting a native Linux process at a breakpoint (registers +
-memory mappings) and restoring that state inside the [Qiling](https://qiling.io/)
-emulator to continue execution there. It has two parts:
+`process-bridge` is a tool for creating a snapshot of a native Linux process at a breakpoint and restoring that state inside the [Qiling](https://qiling.io/) emulator to continue execution from the same point.
 
-- `native/` — a C utility (`process-bridge-x64` / `process-bridge-x86`) that
-  forks the target process, sets a breakpoint at an offset from the image
-  base, runs the process until the breakpoint hits, and dumps a snapshot;
-- `loader/process_bridge/` — a Python/Qiling wrapper that reads the dump and
-  resumes execution inside the emulator.
+The snapshot contains, among other things, the process register state and memory mappings.
+
+The project consists of two main parts:
+
+* `native/` — the native C implementation that creates a snapshot of the target process;
+* `loader/process_bridge/` — the Python part that loads the snapshot and restores the process in the Qiling environment.
+
+## Supported Architectures
+
+The following architectures are currently supported:
+
+* `x86_64`
+* `i386`
 
 ## Requirements
 
-- CMake ≥ 3.20 and `gcc`
-- Python ≥ 3.10 and the `qiling` package (for the Python side)
-- Linux — the native part relies on `ptrace(2)` and headers under
-  `native/include/linux/`; it won't build on other platforms
-  (`platform.h` deliberately fails the build there)
+`process-bridge` works only on **Linux**.
 
-## Building
+The Python package requires:
 
-`CMakeLists.txt` builds **both** targets at once — 64-bit and 32-bit
-(`add_arch_targets(x64 -m64)` and `add_arch_targets(x86 -m32)`) — so even a
-plain build requires a compiler that can produce 32-bit code.
+* Python ≥ 3.12
+* `pip`
 
-```bash
-mkdir build && cd build
-cmake -DCMAKE_BUILD_TYPE=Release ..
-cmake --build . -j"$(nproc)"
-```
+The native components are automatically built with CMake and Clang during package installation.
 
-After building, `build/` will contain four artifacts:
+## Installation
 
-- `process-bridge-x64`, `libprocess-bridge-lib-x64.a`
-- `process-bridge-x86`, `libprocess-bridge-lib-x86.a`
-
-### Building the x86 target on an x86_64 host
-
-Since the host is x86_64, `-m32` needs the 32-bit multilib versions of libc
-and the headers — without them, `process-bridge-x86` fails to link.
+Create a virtual environment and install the package:
 
 ```bash
-# Debian/Ubuntu
-sudo apt update
-sudo apt install gcc-multilib g++-multilib
+python -m venv .venv
+source .venv/bin/activate
 
-# a normal build now builds both targets
-mkdir build && cd build
-cmake -DCMAKE_BUILD_TYPE=Release ..
-cmake --build . -j"$(nproc)"
-```
-
-## Usage (native part)
-
-```bash
-./build/process-bridge-x64 <breakpoint_offset_hex> <path-to-target-binary> [target-args...]
-```
-
-- `breakpoint_offset_hex` — the breakpoint's offset from the loaded image's
-  base address, in hex, without a `0x` prefix
-- `path-to-target-binary` — path to the executable to trace
-- `target-args...` — optional arguments passed through to the target process
-
-The utility forks and launches `target-binary`, sets a breakpoint at
-`image_base + breakpoint_offset_hex`, runs the process up to that point, and
-writes a snapshot to the `ql_snapshot` directory in the current working
-directory.
-
-For a 32-bit target, use `process-bridge-x86` the same way.
-
-For a PIE binary, `breakpoint_offset_hex` is simply the symbol's virtual
-address as reported by `nm`/`objdump -d` on the binary — see
-[`examples/hello`](examples/hello) for a walkthrough.
-
-## Usage (Python/Qiling part)
-
-```bash
+pip install --upgrade pip
 pip install .
-process-bridge-x64   # run the compiled x64 binary through the installed wrapper
-process-bridge-x86   # same, for x86
 ```
 
-`pip install .` compiles the native binaries via CMake (through
-`scikit-build-core`) and bundles them into the `process_bridge` package;
-`process-bridge-x64` / `process-bridge-x86` on your `PATH` just forward their
-arguments to the matching compiled binary.
+During installation, `scikit-build-core` invokes CMake and builds the native components for both supported architectures.
 
-For development, `pip install -e .` also works. Editable installs don't run
-CMake's `install()` step into the package tree, so `process-bridge-x64` /
-`process-bridge-x86` fall back to looking for the binaries in the plain
-`build/` directory from the [Building](#building) section above — build the
-project there first:
+After installation, two commands will be available:
 
 ```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j"$(nproc)"
-pip install -e .
+process-bridge-x86_64-linux
+process-bridge-i386-linux
 ```
 
-If you keep binaries somewhere else, point `PROCESS_BRIDGE_BIN_DIR` at that
-directory instead.
+Each command runs the native component for the corresponding architecture.
 
-Once a snapshot exists, load and resume it from Python with
-`process_bridge.snaphot_init.from_snapshot(...)`:
+## Logging
+
+The logging level can be configured using the `PROCESS_BRIDGE_LOG_LEVEL` environment variable.
+
+The following levels are supported:
+
+* `DEBUG`
+* `INFO`
+* `WARN`
+* `WARNING`
+* `ERROR`
+
+For example:
+
+```bash
+PROCESS_BRIDGE_LOG_LEVEL=DEBUG process-bridge-x86_64-linux ...
+```
+
+or:
+
+```bash
+PROCESS_BRIDGE_LOG_LEVEL=ERROR process-bridge-i386-linux ...
+```
+
+This variable is used by both the Python and native parts of `process-bridge`, so the same setting controls the logging level of the entire tool.
+
+The default logging level is `INFO`.
+
+## Usage
+
+### x86_64
+
+After installation, the package provides:
+
+```bash
+process-bridge-x86_64-linux \
+    <breakpoint_offset_hex> \
+    <path-to-target-binary> \
+    [target-args...]
+```
+
+### i386
+
+For a 32-bit process, use:
+
+```bash
+process-bridge-i386-linux \
+    <breakpoint_offset_hex> \
+    <path-to-target-binary> \
+    [target-args...]
+```
+
+Arguments:
+
+* `breakpoint_offset_hex` — the breakpoint offset relative to the loaded image base, specified in hexadecimal;
+* `path-to-target-binary` — path to the executable to trace;
+* `target-args...` — optional arguments passed to the target process.
+
+The tool launches the target process, sets a breakpoint at:
+
+```text
+image_base + breakpoint_offset_hex
+```
+
+and creates a snapshot when the breakpoint is reached.
+
+The snapshot is written to:
+
+```text
+ql_snapshot
+```
+
+relative to the current working directory.
+
+### PIE binaries
+
+For a PIE binary, `breakpoint_offset_hex` corresponds to the virtual address of the symbol in the binary.
+
+The address can be obtained, for example, with:
+
+```bash
+nm <binary>
+```
+
+or:
+
+```bash
+objdump -d <binary>
+```
+
+See [`examples/hello`](examples/hello) for a complete example.
+
+## Loading a Snapshot from Python
+
+Once a snapshot has been created, it can be loaded from Python and execution can be resumed in Qiling:
 
 ```python
 from process_bridge import snaphot_init
 
-ql, entry = snaphot_init.from_snapshot("x86_64", "dummy_rootfs", "ql_snapshot", QL_VERBOSE.DEBUG)
-ql.emu_start(begin=entry, end=...)
+ql, entry = snaphot_init.from_snapshot(
+    "x86_64",
+    "dummy_rootfs",
+    "ql_snapshot",
+    QL_VERBOSE.DEBUG,
+)
+
+ql.emu_start(
+    begin=entry,
+    end=...,
+)
 ```
 
-`rootfs_path` just needs to point at an existing (can be empty) directory —
-Qiling requires one to initialize, but since every default mapping it creates
-is unmapped and replaced by the snapshot's own mappings before execution
-resumes, its contents don't matter here.
+`rootfs_path` must point to an existing directory. The directory may be empty.
 
-See [`examples/hello`](examples/hello) and [`examples/nginx`](examples/nginx)
-for two complete, runnable examples.
+Qiling requires a `rootfs` during initialization, but its contents do not matter in this scenario: the default memory mappings created by Qiling are removed and replaced with the mappings restored from the snapshot before execution resumes.
+
+See the complete examples:
+
+* [`examples/hello`](examples/hello)
+* [`examples/nginx`](examples/nginx)
+
+## Building from Source
+
+For development, the native components can be built directly with CMake.
+
+The target architecture is selected using a CMake preset.
+
+### x86_64
+
+```bash
+cmake --preset x86_64-linux
+cmake --build --preset x86_64-linux
+```
+
+The build output will be located in:
+
+```text
+build/x86_64-linux/
+```
+
+The main artifacts are:
+
+```text
+process-bridge
+libprocess-bridge-lib.so
+```
+
+### i386
+
+```bash
+cmake --preset i386-linux
+cmake --build --preset i386-linux
+```
+
+The build output will be located in:
+
+```text
+build/i386-linux/
+```
+
+### Native Tests
+
+For x86_64:
+
+```bash
+ctest --preset x86_64-linux --output-on-failure
+```
+
+For i386:
+
+```bash
+ctest --preset i386-linux --output-on-failure
+```
+
+## Docker
+
+A `Dockerfile` based on Ubuntu 24.04 is provided for a reproducible development environment.
+
+Build the image:
+
+```bash
+docker build -t process-bridge .
+```
+
+Run the container with the project sources mounted:
+
+```bash
+docker run --rm -it \
+  -v "$PWD:/workspace" \
+  process-bridge
+```
+
+Once inside the container, the package can be installed normally:
+
+```bash
+pip install .
+```
+
+Alternatively, the native components can be built directly with CMake.
+
+## License
+
+This project is licensed under the MIT License.
+
+See [`LICENSE`](LICENSE).
+
+### Third-party Dependencies
+
+The project uses the [Qiling Framework](https://qiling.io/) as its emulation environment.
+
+Qiling is an external dependency of the project and is distributed under its own license. This does not affect the MIT license applied to the `process-bridge` source code.
+
+## Instruction Compatibility
+
+The restored process may contain CPU instructions that are not supported by
+the Unicorn version used by Qiling. For example, applications using AVX2,
+AVX-512, or instructions such as `XSAVEC` may fail during emulation.
+
+In such cases, it may be necessary to disable the corresponding CPU features
+when starting the target process. For example:
+
+```bash
+GLIBC_TUNABLES=glibc.cpu.hwcaps=-XSAVEC,-AVX,-AVX2,-AVX512 \
+process-bridge-x86_64-linux <breakpoint_offset_hex> <path-to-target-binary> [target-args...]
+```
+
+This makes glibc avoid using the specified CPU features when selecting its
+optimized implementations, which can prevent unsupported instructions from
+being executed by the restored process.
+
+## Project Status
+
+`process-bridge` is a new project and is currently in an early stage of
+development. Snapshot support is intentionally limited at this point.
+
+The current implementation only captures and restores:
+
+* process memory mappings;
+* integer CPU registers.
+
+Many other parts of the process state are not supported yet, including file
+descriptors, sockets, and other OS resources.
+
+As a result, `process-bridge` currently works best with applications and
+execution points that do not depend heavily on unsupported process resources.
+Support for additional types of process state may be added in the future.
+
