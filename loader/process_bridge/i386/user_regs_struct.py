@@ -272,8 +272,6 @@ def dump_regs(ql: Qiling, snapshot_info: SnapshotInfo) -> int:
     log.debug("restored data descriptor: %#x", int.from_bytes(data_desc, "little"))
 
     for desc in snapshot_info.tls:
-        if bool(desc.seg_not_present):
-            continue
         ql.mem.write(
             gdt_base + desc.entry_number * 8, user_desc_to_real_desc_bytes(desc)
         )
