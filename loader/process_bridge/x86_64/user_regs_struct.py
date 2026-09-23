@@ -79,35 +79,6 @@ class SnapshotInfo(Structure):
 
 
 def dump_regs(ql: Qiling, snapshot_info: SnapshotInfo) -> int:
-    ql.arch.regs.rax = snapshot_info.regs.rax
-    ql.arch.regs.rbx = snapshot_info.regs.rbx
-    ql.arch.regs.rcx = snapshot_info.regs.rcx
-    ql.arch.regs.rdx = snapshot_info.regs.rdx
-    ql.arch.regs.rsi = snapshot_info.regs.rsi
-    ql.arch.regs.rdi = snapshot_info.regs.rdi
-    ql.arch.regs.rbp = snapshot_info.regs.rbp
-    ql.arch.regs.rsp = snapshot_info.regs.rsp
-    ql.arch.regs.r8 = snapshot_info.regs.r8
-    ql.arch.regs.r9 = snapshot_info.regs.r9
-    ql.arch.regs.r10 = snapshot_info.regs.r10
-    ql.arch.regs.r11 = snapshot_info.regs.r11
-    ql.arch.regs.r12 = snapshot_info.regs.r12
-    ql.arch.regs.r13 = snapshot_info.regs.r13
-    ql.arch.regs.r14 = snapshot_info.regs.r14
-    ql.arch.regs.r15 = snapshot_info.regs.r15
-    ql.arch.regs.rip = snapshot_info.regs.rip
-    ql.arch.regs.eflags = snapshot_info.regs.elflags
-
-    ql.uc.reg_write(UC_X86_REG_DS, snapshot_info.regs.ds)
-    ql.uc.reg_write(UC_X86_REG_ES, snapshot_info.regs.es)
-    ql.uc.reg_write(UC_X86_REG_FS, snapshot_info.regs.fs)
-    ql.uc.reg_write(UC_X86_REG_GS, snapshot_info.regs.gs)
-    ql.uc.reg_write(UC_X86_REG_CS, snapshot_info.regs.cs)
-    ql.uc.reg_write(UC_X86_REG_SS, snapshot_info.regs.ss)
-
-    ql.uc.reg_write(UC_X86_REG_FS_BASE, snapshot_info.regs.fs_base)
-    ql.uc.reg_write(UC_X86_REG_GS_BASE, snapshot_info.regs.gs_base)
-
     gdt_base = ql.os.gdtm.array.base
 
     segment_regs = [
@@ -145,6 +116,35 @@ def dump_regs(ql: Qiling, snapshot_info: SnapshotInfo) -> int:
         snapshot_info.regs.es >> 3
     ) != GDT_ENTRY_DEFAULT_USER_DS:
         raise RuntimeError("es is not the default user ds")
+
+    ql.arch.regs.rax = snapshot_info.regs.rax
+    ql.arch.regs.rbx = snapshot_info.regs.rbx
+    ql.arch.regs.rcx = snapshot_info.regs.rcx
+    ql.arch.regs.rdx = snapshot_info.regs.rdx
+    ql.arch.regs.rsi = snapshot_info.regs.rsi
+    ql.arch.regs.rdi = snapshot_info.regs.rdi
+    ql.arch.regs.rbp = snapshot_info.regs.rbp
+    ql.arch.regs.rsp = snapshot_info.regs.rsp
+    ql.arch.regs.r8 = snapshot_info.regs.r8
+    ql.arch.regs.r9 = snapshot_info.regs.r9
+    ql.arch.regs.r10 = snapshot_info.regs.r10
+    ql.arch.regs.r11 = snapshot_info.regs.r11
+    ql.arch.regs.r12 = snapshot_info.regs.r12
+    ql.arch.regs.r13 = snapshot_info.regs.r13
+    ql.arch.regs.r14 = snapshot_info.regs.r14
+    ql.arch.regs.r15 = snapshot_info.regs.r15
+    ql.arch.regs.rip = snapshot_info.regs.rip
+    ql.arch.regs.eflags = snapshot_info.regs.elflags
+
+    ql.uc.reg_write(UC_X86_REG_DS, snapshot_info.regs.ds)
+    ql.uc.reg_write(UC_X86_REG_ES, snapshot_info.regs.es)
+    ql.uc.reg_write(UC_X86_REG_FS, snapshot_info.regs.fs)
+    ql.uc.reg_write(UC_X86_REG_GS, snapshot_info.regs.gs)
+    ql.uc.reg_write(UC_X86_REG_CS, snapshot_info.regs.cs)
+    ql.uc.reg_write(UC_X86_REG_SS, snapshot_info.regs.ss)
+
+    ql.uc.reg_write(UC_X86_REG_FS_BASE, snapshot_info.regs.fs_base)
+    ql.uc.reg_write(UC_X86_REG_GS_BASE, snapshot_info.regs.gs_base)
 
     log.debug(
         "restored regs: rax=%#x rbx=%#x rcx=%#x rdx=%#x rsi=%#x rdi=%#x "
