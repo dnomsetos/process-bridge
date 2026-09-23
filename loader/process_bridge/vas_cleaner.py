@@ -13,7 +13,7 @@ def clean_vas(ql: Qiling, ql_arch: QL_ARCH) -> int:
     unmapped = 0
 
     for lbound, ubound, _, label, *_ in list(ql.mem.map_info):
-        if ql_arch == QL_ARCH.X86 and lbound == gdt_base:
+        if lbound == gdt_base:
             log.debug("keeping GDT mapping at %#x, not unmapping", lbound)
             ql.mem.write(lbound, b"\x00" * (ubound - lbound))
             continue

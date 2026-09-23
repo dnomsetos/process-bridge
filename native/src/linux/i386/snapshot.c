@@ -11,7 +11,7 @@
 #define GDT_ENTRY_TLS_MIN_COMP_MODE 12
 #define GDT_ENTRY_TLS_ENTRIES 3
 
-void create_snapshot(snapshot_info_t *snapshot,
+void create_snapshot(process_state_t *snapshot,
                      const breakpoint_t *breakpoint) {
   pid_t pid = breakpoint->pid;
 

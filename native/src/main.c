@@ -59,7 +59,7 @@ int main(int argc, char *argv[]) {
 
   execute_up_to_breakpoint(&breakpoint);
 
-  snapshot_info_t snapshot;
+  process_state_t snapshot;
 
   create_snapshot(&snapshot, &breakpoint);
   dump_snapshot(&snapshot, pid, "ql_snapshot");

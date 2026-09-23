@@ -1,9 +1,15 @@
+from process_bridge.gdt_utils import *
+
 from ctypes import Structure, c_ulonglong
 from qiling import Qiling
+from unicorn.x86_const import *
 
 from ..log import get_logger
 
 log = get_logger(__name__)
+
+GDT_ENTRY_DEFAULT_USER_DS = 5
+GDT_ENTRY_DEFAULT_USER_CS = 6
 
 
 class UserRegsStruct(Structure):
@@ -91,13 +97,59 @@ def dump_regs(ql: Qiling, snapshot_info: SnapshotInfo) -> int:
     ql.arch.regs.r15 = snapshot_info.regs.r15
     ql.arch.regs.rip = snapshot_info.regs.rip
     ql.arch.regs.eflags = snapshot_info.regs.elflags
-    ql.arch.regs.fsbase = snapshot_info.regs.fs_base
-    ql.arch.regs.gsbase = snapshot_info.regs.gs_base
+
+    ql.uc.reg_write(UC_X86_REG_DS, snapshot_info.regs.ds)
+    ql.uc.reg_write(UC_X86_REG_ES, snapshot_info.regs.es)
+    ql.uc.reg_write(UC_X86_REG_FS, snapshot_info.regs.fs)
+    ql.uc.reg_write(UC_X86_REG_GS, snapshot_info.regs.gs)
+    ql.uc.reg_write(UC_X86_REG_CS, snapshot_info.regs.cs)
+    ql.uc.reg_write(UC_X86_REG_SS, snapshot_info.regs.ss)
+
+    ql.uc.reg_write(UC_X86_REG_FS_BASE, snapshot_info.regs.fs_base)
+    ql.uc.reg_write(UC_X86_REG_GS_BASE, snapshot_info.regs.gs_base)
+
+    gdt_base = ql.os.gdtm.array.base
+
+    segment_regs = [
+        snapshot_info.regs.cs,
+        snapshot_info.regs.ds,
+        snapshot_info.regs.es,
+        snapshot_info.regs.ss,
+        snapshot_info.regs.fs,
+        snapshot_info.regs.gs,
+    ]
+
+    if any(seg & 0x4 for seg in segment_regs):
+        raise RuntimeError("LDT not supported")
+
+    if (snapshot_info.regs.cs >> 3) != GDT_ENTRY_DEFAULT_USER_CS:
+        raise RuntimeError("cs is not the default user cs")
+
+    code_desc = make_gdt_entry_init(DESC_CODE64 | DESC_USER, 0, 0xFFFFF)
+    ql.mem.write(gdt_base + (snapshot_info.regs.cs >> 3) * 8, code_desc)
+    log.debug("restored code descriptor: %#x", int.from_bytes(code_desc, "little"))
+
+    if (snapshot_info.regs.ss >> 3) != GDT_ENTRY_DEFAULT_USER_DS:
+        raise RuntimeError("ss is not the default user ds")
+
+    data_desc = make_gdt_entry_init(DESC_DATA64 | DESC_USER, 0, 0xFFFFF)
+    ql.mem.write(gdt_base + (snapshot_info.regs.ss >> 3) * 8, data_desc)
+    log.debug("restored data descriptor: %#x", int.from_bytes(data_desc, "little"))
+
+    if (snapshot_info.regs.ds >> 3) != 0 and (
+        snapshot_info.regs.ds >> 3
+    ) != GDT_ENTRY_DEFAULT_USER_DS:
+        raise RuntimeError("ds is not the default user ds")
+
+    if (snapshot_info.regs.es >> 3 != 0) and (
+        snapshot_info.regs.es >> 3
+    ) != GDT_ENTRY_DEFAULT_USER_DS:
+        raise RuntimeError("es is not the default user ds")
 
     log.debug(
         "restored regs: rax=%#x rbx=%#x rcx=%#x rdx=%#x rsi=%#x rdi=%#x "
         "rbp=%#x rsp=%#x r8=%#x r9=%#x r10=%#x r11=%#x r12=%#x r13=%#x "
-        "r14=%#x r15=%#x rip=%#x eflags=%#x fs_base=%#x gs_base=%#x",
+        "r14=%#x r15=%#x rip=%#x eflags=%#x fs=%#x gs=%#x fs_base=%#x gs_base=%#x",
         snapshot_info.regs.rax,
         snapshot_info.regs.rbx,
         snapshot_info.regs.rcx,
@@ -116,8 +168,10 @@ def dump_regs(ql: Qiling, snapshot_info: SnapshotInfo) -> int:
         snapshot_info.regs.r15,
         snapshot_info.regs.rip,
         snapshot_info.regs.elflags,
-        snapshot_info.regs.fs_base,
-        snapshot_info.regs.gs_base,
+        ql.uc.reg_read(UC_X86_REG_FS),
+        ql.uc.reg_read(UC_X86_REG_GS),
+        ql.uc.reg_read(UC_X86_REG_FS_BASE),
+        ql.uc.reg_read(UC_X86_REG_GS_BASE),
     )
 
     return ql.arch.regs.rip

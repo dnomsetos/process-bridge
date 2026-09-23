@@ -8,6 +8,6 @@
 typedef struct {
   struct user_regs_struct regs;
   struct user_desc tls[3];
-} snapshot_info_t;
+} process_state_t;
 
-void create_snapshot(snapshot_info_t *snapshot, const breakpoint_t *breakpoint);
+void create_snapshot(process_state_t *snapshot, const breakpoint_t *breakpoint);

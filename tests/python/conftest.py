@@ -33,6 +33,15 @@ def _install_fake_unicorn() -> None:
     sys.modules["unicorn.x86_const"] = x86_const_mod
     unicorn_mod.x86_const = x86_const_mod
 
+    x86_const_mod.UC_X86_REG_DS = 17
+    x86_const_mod.UC_X86_REG_CS = 11
+    x86_const_mod.UC_X86_REG_ES = 28
+    x86_const_mod.UC_X86_REG_FS = 32
+    x86_const_mod.UC_X86_REG_GS = 33
+    x86_const_mod.UC_X86_REG_SS = 49
+    x86_const_mod.UC_X86_REG_FS_BASE = 250
+    x86_const_mod.UC_X86_REG_GS_BASE = 251
+
 
 def _install_fake_qiling() -> None:
     qiling_mod = types.ModuleType("qiling")

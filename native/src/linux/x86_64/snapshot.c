@@ -6,7 +6,7 @@
 #include <linux/x86_64/snapshot.h>
 #include <log.h>
 
-void create_snapshot(snapshot_info_t *snapshot,
+void create_snapshot(process_state_t *snapshot,
                      const breakpoint_t *breakpoint) {
   pid_t pid = breakpoint->pid;
   if (ptrace(PTRACE_GETREGS, pid, NULL, &snapshot->regs) == -1) {

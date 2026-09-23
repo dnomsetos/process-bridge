@@ -5,13 +5,12 @@ from ctypes import sizeof
 
 import pytest
 import unicorn
-from fakes import FakeGdtm, FakeQiling
+from fakes import FakeGdtm, FakeQiling, FakeUc
 
 if not hasattr(unicorn, "UC_HOOK_CODE"):
     unicorn.UC_HOOK_CODE = 1
 
 import process_bridge.i386.user_regs_struct as user_regs
-
 
 TRAMPOLINE_ADDR = 0x100000
 GDT_BASE = 0xF000
@@ -31,52 +30,6 @@ REG_FS = 10
 REG_GS = 11
 REG_CS = 12
 REG_SS = 13
-
-
-class FakeUc:
-    def __init__(self) -> None:
-        self.registers: dict[int, int] = {}
-        self.hooks: dict[int, tuple[int, object, int, int, object]] = {}
-        self.hook_add_calls: list[tuple[int, object, int, int, object]] = []
-        self.hook_del_calls: list[int] = []
-        self._next_hook = 1
-
-    def reg_write(self, reg: int, value: int) -> None:
-        self.registers[reg] = value
-
-    def reg_read(self, reg: int) -> int:
-        return self.registers.get(reg, 0)
-
-    def hook_add(
-        self,
-        hook_type: int,
-        callback: object,
-        *,
-        begin: int = 1,
-        end: int = 0,
-        user_data: object = None,
-    ) -> int:
-        handle = self._next_hook
-        self._next_hook += 1
-
-        record = (hook_type, callback, begin, end, user_data)
-        self.hooks[handle] = record
-        self.hook_add_calls.append(record)
-
-        return handle
-
-    def hook_del(self, handle: int) -> None:
-        self.hook_del_calls.append(handle)
-        del self.hooks[handle]
-
-    def invoke_hook(
-        self,
-        handle: int,
-        address: int,
-        size: int = 1,
-    ) -> None:
-        _, callback, _, _, user_data = self.hooks[handle]
-        callback(self, address, size, user_data)
 
 
 @pytest.fixture
@@ -206,9 +159,7 @@ def test_user_regs_struct_matches_i386_linux_layout():
         for field_name, _ in user_regs.UserRegsStruct._fields_
     }
 
-    assert [offsets[name] for name in fields] == [
-        index * 4 for index in range(17)
-    ]
+    assert [offsets[name] for name in fields] == [index * 4 for index in range(17)]
 
 
 def test_user_desc_bitfields_round_trip():
@@ -241,8 +192,7 @@ def test_user_desc_has_expected_size():
 
 def test_snapshot_info_has_expected_layout():
     assert sizeof(user_regs.SnapshotInfo) == (
-        sizeof(user_regs.UserRegsStruct)
-        + 3 * sizeof(user_regs.UserDesc)
+        sizeof(user_regs.UserRegsStruct) + 3 * sizeof(user_regs.UserDesc)
     )
 
 
@@ -325,10 +275,7 @@ def test_user_desc_to_gdt_preserves_20_bit_limit():
     # G = bit 55.
     assert result & (1 << 55)
 
-    encoded_limit = (
-        (result & 0xFFFF)
-        | (((result >> 48) & 0xF) << 16)
-    )
+    encoded_limit = (result & 0xFFFF) | (((result >> 48) & 0xF) << 16)
 
     assert encoded_limit == (desc.limit & 0xFFFFF)
 
@@ -364,9 +311,7 @@ def test_dump_regs_restores_gprs_and_eflags(
     assert ql.arch.regs.eflags == 0x202
 
     assert ql.arch.regs.eip == 0
-    assert ql.arch.regs.esp == (
-        TRAMPOLINE_ADDR + user_regs.FRAME_OFFSET
-    )
+    assert ql.arch.regs.esp == (TRAMPOLINE_ADDR + user_regs.FRAME_OFFSET)
 
     assert ql.uc.reg_read(REG_SS) == 12 << 3
 
@@ -423,15 +368,18 @@ def test_dump_regs_restores_nonpresent_tls_as_untouched_descriptor(
 
     ql.mem.write(
         GDT_BASE + 6 * 8,
-        b"\xAA" * 8,
+        b"\xaa" * 8,
     )
 
     user_regs.dump_regs(ql, snapshot)
 
-    assert ql.mem.read(
-        GDT_BASE + 6 * 8,
-        8,
-    ) == b"\xAA" * 8
+    assert (
+        ql.mem.read(
+            GDT_BASE + 6 * 8,
+            8,
+        )
+        == b"\xaa" * 8
+    )
 
 
 def test_dump_regs_restores_present_tls_descriptor(
@@ -492,9 +440,7 @@ def test_enter_ring3_builds_iret_frame_and_registers_code_hook(
     )
 
     assert ql.arch.regs.eip == 0
-    assert ql.arch.regs.esp == (
-        TRAMPOLINE_ADDR + user_regs.FRAME_OFFSET
-    )
+    assert ql.arch.regs.esp == (TRAMPOLINE_ADDR + user_regs.FRAME_OFFSET)
     assert uc.reg_read(REG_SS) == 12 << 3
 
     assert len(uc.hook_add_calls) == 1
@@ -530,10 +476,13 @@ def test_enter_ring3_cleanup_after_successful_ring3_switch(
         user_regs.TRAMPOLINE_SIZE,
     )
 
-    assert ql.mem.read(
-        GDT_BASE + 12 * 8,
-        8,
-    ) == user_regs.NULL_DESCRIPTOR
+    assert (
+        ql.mem.read(
+            GDT_BASE + 12 * 8,
+            8,
+        )
+        == user_regs.NULL_DESCRIPTOR
+    )
 
     assert ql.uc.reg_read(REG_CS) == snapshot.regs.xcs
     assert ql.uc.reg_read(REG_SS) == snapshot.regs.xss
@@ -569,10 +518,13 @@ def test_enter_ring3_detects_failed_ring3_switch(
         user_regs.TRAMPOLINE_SIZE,
     )
 
-    assert ql.mem.read(
-        GDT_BASE + 12 * 8,
-        8,
-    ) == user_regs.RAW_R0_DS_DESCRIPTOR
+    assert (
+        ql.mem.read(
+            GDT_BASE + 12 * 8,
+            8,
+        )
+        == user_regs.RAW_R0_DS_DESCRIPTOR
+    )
 
 
 def test_enter_ring3_raises_when_eip_is_not_mapped(

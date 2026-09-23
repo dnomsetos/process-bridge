@@ -108,6 +108,52 @@ class FakeMem:
         return bytes(region.data[offset : offset + size])
 
 
+class FakeUc:
+    def __init__(self) -> None:
+        self.registers: dict[int, int] = {}
+        self.hooks: dict[int, tuple[int, object, int, int, object]] = {}
+        self.hook_add_calls: list[tuple[int, object, int, int, object]] = []
+        self.hook_del_calls: list[int] = []
+        self._next_hook = 1
+
+    def reg_write(self, reg: int, value: int) -> None:
+        self.registers[reg] = value
+
+    def reg_read(self, reg: int) -> int:
+        return self.registers.get(reg, 0)
+
+    def hook_add(
+        self,
+        hook_type: int,
+        callback: object,
+        *,
+        begin: int = 1,
+        end: int = 0,
+        user_data: object = None,
+    ) -> int:
+        handle = self._next_hook
+        self._next_hook += 1
+
+        record = (hook_type, callback, begin, end, user_data)
+        self.hooks[handle] = record
+        self.hook_add_calls.append(record)
+
+        return handle
+
+    def hook_del(self, handle: int) -> None:
+        self.hook_del_calls.append(handle)
+        del self.hooks[handle]
+
+    def invoke_hook(
+        self,
+        handle: int,
+        address: int,
+        size: int = 1,
+    ) -> None:
+        _, callback, _, _, user_data = self.hooks[handle]
+        callback(self, address, size, user_data)
+
+
 class FakeGdtSegment(SimpleNamespace):
     pass
 
@@ -144,3 +190,4 @@ class FakeQiling:
         self.arch = SimpleNamespace(regs=FakeRegs())
         self.mem = FakeMem()
         self.os = FakeOs(gdtm=gdtm or FakeGdtm())
+        self.uc = FakeUc()
