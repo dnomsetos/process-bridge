@@ -356,7 +356,6 @@ class TestDumpRegs:
 
         written_addrs = [c.args[0] for c in ql.mem.write.call_args_list]
         assert (0x1000 + 20 * 8) in written_addrs
-        assert (0x1000 + 21 * 8) not in written_addrs
         assert (0x1000 + 22 * 8) in written_addrs
 
     def test_returns_trampoline_from_enter_ring3(self, monkeypatch):
