@@ -23,9 +23,9 @@ static uint64_t dump_gdt(uc_engine *uc, linux_i386_process_state_t *state) {
   uint8_t gdt[PB_GDT_SIZE] = {0};
   uint64_t *gdt_array = (uint64_t *)gdt;
 
-  if ((state->regs.xcs & 0x4) == 1 || (state->regs.xds & 0x4) == 1 ||
-      (state->regs.xes & 0x4) == 1 || (state->regs.xfs & 0x4) == 1 ||
-      (state->regs.xgs & 0x4) == 1 || (state->regs.xss & 0x4) == 1) {
+  if ((state->regs.xcs & 0x4) != 0 || (state->regs.xds & 0x4) != 0 ||
+      (state->regs.xes & 0x4) != 0 || (state->regs.xfs & 0x4) != 0 ||
+      (state->regs.xgs & 0x4) != 0 || (state->regs.xss & 0x4) != 0) {
     LOG_FATAL("ldt not supported");
     return -1;
   }

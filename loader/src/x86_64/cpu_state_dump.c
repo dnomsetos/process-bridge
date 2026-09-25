@@ -20,9 +20,9 @@ static uint64_t dump_gdt(uc_engine *uc, linux_x86_64_process_state_t *state) {
   uint8_t gdt[PB_GDT_SIZE] = {0};
   uint64_t *gdt_array = (uint64_t *)gdt;
 
-  if ((state->regs.cs & 0x4) == 1 || (state->regs.ds & 0x4) == 1 ||
-      (state->regs.es & 0x4) == 1 || (state->regs.fs & 0x4) == 1 ||
-      (state->regs.gs & 0x4) == 1 || (state->regs.ss & 0x4) == 1) {
+  if ((state->regs.cs & 0x4) != 0 || (state->regs.ds & 0x4) != 0 ||
+      (state->regs.es & 0x4) != 0 || (state->regs.fs & 0x4) != 0 ||
+      (state->regs.gs & 0x4) != 0 || (state->regs.ss & 0x4) != 0) {
     LOG_FATAL("ldt not supported");
     return -1;
   }
