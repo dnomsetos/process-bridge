@@ -1,38 +1,30 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(process-bridge LANGUAGES C)
+project(
+  process-bridge
+  VERSION 0.1.0
+  LANGUAGES C)
 
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-file(GLOB_RECURSE SRC_FILES CONFIGURE_DEPENDS
-     "${CMAKE_CURRENT_SOURCE_DIR}/native/src/*.c")
+add_library(pb-common INTERFACE)
 
-list(REMOVE_ITEM SRC_FILES "${CMAKE_CURRENT_SOURCE_DIR}/native/src/main.c")
+target_include_directories(pb-common
+                           INTERFACE ${PROJECT_SOURCE_DIR}/common/include)
 
-add_library(process-bridge-lib SHARED ${SRC_FILES})
+option(PROCESS_BRIDGE_BUILD_SNAPSHOTTER "Build snapshotter" OFF)
+option(PROCESS_BRIDGE_BUILD_LOADER "Build loader" OFF)
 
-target_include_directories(process-bridge-lib
-                           PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/native/include)
-
-target_compile_definitions(process-bridge-lib PRIVATE _GNU_SOURCE)
-
-add_executable(process-bridge native/src/main.c)
-
-set_target_properties(process-bridge-lib PROPERTIES OUTPUT_NAME
-                                                    process-bridge-lib)
-
-set_target_properties(process-bridge PROPERTIES BUILD_RPATH "\$ORIGIN"
-                                                INSTALL_RPATH "\$ORIGIN")
-
-target_compile_definitions(process-bridge PRIVATE _GNU_SOURCE)
-
-target_link_libraries(process-bridge PRIVATE process-bridge-lib)
-
-install(TARGETS process-bridge-lib LIBRARY DESTINATION .)
-install(TARGETS process-bridge RUNTIME DESTINATION .)
+add_subdirectory(utilities/log)
 
 include(CTest)
 
-if(BUILD_TESTING)
-  add_subdirectory(tests/native)
+if(PROCESS_BRIDGE_BUILD_SNAPSHOTTER)
+  add_subdirectory(snapshotter)
+endif()
+
+if(PROCESS_BRIDGE_BUILD_LOADER)
+  add_subdirectory(loader)
 endif()
