@@ -89,6 +89,28 @@ static uint64_t dump_regs(uc_engine *uc, linux_i386_process_state_t *state) {
               "failed to write ebp");
   PB_UC_CHECK(uc_reg_write(uc, UC_X86_REG_EAX, &state->regs.eax),
               "failed to write eax");
+  PB_UC_CHECK(uc_reg_write(uc, UC_X86_REG_ESP, &state->regs.esp),
+              "failed to write esp");
+
+  LOG_DEBUG("general-purpose registers written successfully");
+  LOG_DEBUG("eax: 0x%d" PRIx64, state->regs.eax);
+  LOG_DEBUG("ebx: 0x%d" PRIx64, state->regs.ebx);
+  LOG_DEBUG("ecx: 0x%d" PRIx64, state->regs.ecx);
+  LOG_DEBUG("edx: 0x%d" PRIx64, state->regs.edx);
+  LOG_DEBUG("esi: 0x%d" PRIx64, state->regs.esi);
+  LOG_DEBUG("edi: 0x%d" PRIx64, state->regs.edi);
+  LOG_DEBUG("ebp: 0x%d" PRIx64, state->regs.ebp);
+  LOG_DEBUG("esp: 0x%d" PRIx64, state->regs.esp);
+
+  PB_UC_CHECK(uc_reg_write(uc, UC_X86_REG_EIP, &state->regs.eip),
+              "failed to write eip");
+  PB_UC_CHECK(uc_reg_write(uc, UC_X86_REG_EFLAGS, &state->regs.eflags),
+              "failed to write eflags");
+
+  LOG_DEBUG("eip and eflags written successfully");
+  LOG_DEBUG("eip: 0x%d" PRIx64, state->regs.eip);
+  LOG_DEBUG("eflags: 0x%d" PRIx64, state->regs.eflags);
+
   PB_UC_CHECK(uc_reg_write(uc, UC_X86_REG_DS, &state->regs.xds),
               "failed to write xds");
   PB_UC_CHECK(uc_reg_write(uc, UC_X86_REG_ES, &state->regs.xes),
@@ -97,18 +119,19 @@ static uint64_t dump_regs(uc_engine *uc, linux_i386_process_state_t *state) {
               "failed to write xfs");
   PB_UC_CHECK(uc_reg_write(uc, UC_X86_REG_GS, &state->regs.xgs),
               "failed to write xgs");
-  PB_UC_CHECK(uc_reg_write(uc, UC_X86_REG_EAX, &state->regs.orig_eax),
-              "failed to write orig_eax");
-  PB_UC_CHECK(uc_reg_write(uc, UC_X86_REG_EIP, &state->regs.eip),
-              "failed to write eip");
   PB_UC_CHECK(uc_reg_write(uc, UC_X86_REG_CS, &state->regs.xcs),
               "failed to write xcs");
-  PB_UC_CHECK(uc_reg_write(uc, UC_X86_REG_EFLAGS, &state->regs.eflags),
-              "failed to write eflags");
-  PB_UC_CHECK(uc_reg_write(uc, UC_X86_REG_ESP, &state->regs.esp),
-              "failed to write esp");
   PB_UC_CHECK(uc_reg_write(uc, UC_X86_REG_SS, &state->regs.xss),
               "failed to write xss");
+
+  LOG_DEBUG("segment registers written successfully");
+  LOG_DEBUG("cs: 0x%d" PRIx64, state->regs.xcs);
+  LOG_DEBUG("ds: 0x%d" PRIx64, state->regs.xds);
+  LOG_DEBUG("es: 0x%d" PRIx64, state->regs.xes);
+  LOG_DEBUG("fs: 0x%d" PRIx64, state->regs.xfs);
+  LOG_DEBUG("gs: 0x%d" PRIx64, state->regs.xgs);
+  LOG_DEBUG("ss: 0x%d" PRIx64, state->regs.xss);
+
   return 0;
 }
 

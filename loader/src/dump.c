@@ -99,7 +99,7 @@ uint64_t dump_snapshot(uc_engine *uc, const char *snapshot_path) {
     }
 
     LOG_DEBUG(
-        "mapping %#lx-%#lx r=%u w=%u x=%u shared=%u offset=%#lx path='%s'\n",
+        "mapping %#lx-%#lx r=%u w=%u x=%u shared=%u offset=%#lx path='%s'",
         (unsigned long)entry_data.start,
         (unsigned long)entry_data.end,
         entry_data.read,
@@ -115,7 +115,7 @@ uint64_t dump_snapshot(uc_engine *uc, const char *snapshot_path) {
     if (mapping_size > file_size - offset) {
       LOG_FATAL(
           "mapping[%#lx - %#lx] claims %lu bytes,"
-          "but only %zu remain in file\n",
+          "but only %zu remain in file",
           (unsigned long)entry_data.start,
           (unsigned long)entry_data.end,
           (unsigned long)mapping_size,
@@ -126,10 +126,41 @@ uint64_t dump_snapshot(uc_engine *uc, const char *snapshot_path) {
 
     const void *content = data + offset;
 
-    uc_err err = uc_mem_write(uc, entry_data.start, content, mapping_size);
+    uint32_t perms = 0;
 
+    if (entry_data.read) {
+      perms |= UC_PROT_READ;
+    }
+
+    if (entry_data.write) {
+      perms |= UC_PROT_WRITE;
+    }
+
+    if (entry_data.exec) {
+      perms |= UC_PROT_EXEC;
+    }
+
+    uc_err err = uc_mem_map(uc, entry_data.start, mapping_size, UC_PROT_WRITE);
     if (err != UC_ERR_OK) {
-      LOG_FATAL("failed to load mapping [%#lx-%#lx]: %s\n",
+      LOG_FATAL("failed to map mapping [%#lx-%#lx]: %s",
+                (unsigned long)entry_data.start,
+                (unsigned long)entry_data.end,
+                uc_strerror(err));
+      goto cleanup;
+    }
+
+    err = uc_mem_write(uc, entry_data.start, content, mapping_size);
+    if (err != UC_ERR_OK) {
+      LOG_FATAL("failed to load mapping [%#lx-%#lx]: %s",
+                (unsigned long)entry_data.start,
+                (unsigned long)entry_data.end,
+                uc_strerror(err));
+      goto cleanup;
+    }
+
+    err = uc_mem_protect(uc, entry_data.start, mapping_size, perms);
+    if (err != UC_ERR_OK) {
+      LOG_FATAL("failed to restore permissions for mapping [%#lx-%#lx]: %s",
                 (unsigned long)entry_data.start,
                 (unsigned long)entry_data.end,
                 uc_strerror(err));
@@ -141,12 +172,10 @@ uint64_t dump_snapshot(uc_engine *uc, const char *snapshot_path) {
   }
 
   uint64_t entry = dump_cpu_state(uc, &cpu_state);
-
-  fprintf(stderr,
-          "loaded snapshot '%s': %zu mapping(s), %zu bytes total\n",
-          snapshot_path,
-          mappings_loaded,
-          file_size);
+  LOG_DEBUG("loaded snapshot '%s': %zu mapping(s), %zu bytes total",
+            snapshot_path,
+            mappings_loaded,
+            file_size);
 
 cleanup:
   if (mapping != MAP_FAILED) {
