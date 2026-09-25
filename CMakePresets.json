@@ -1,55 +1,128 @@
 {
-  "version": 6,
-
+  "version": 9,
+  
   "configurePresets": [
     {
-      "name": "x86_64-linux",
-      "binaryDir": "${sourceDir}/build/x86_64-linux",
+      "name": "snapshotter-x86_64-debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/snapshotter-x86_64-debug",
       "cacheVariables": {
-	"CMAKE_BUILD_TYPE": "Release",
         "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "PROCESS_BRIDGE_BUILD_SNAPSHOTTER": true,
+        "PROCESS_BRIDGE_BUILD_LOADER": false,
+        "CMAKE_C_FLAGS": "-fsanitize=address -fsanitize=undefined -fno-omit-frame-pointer",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address -fsanitize=undefined",
         "CMAKE_C_COMPILER_TARGET": "x86_64-pc-linux-gnu"
       }
     },
-
     {
-      "name": "i386-linux",
-      "binaryDir": "${sourceDir}/build/i386-linux",
+      "name": "snapshotter-x86_64-release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/snapshotter-x86_64-release",
       "cacheVariables": {
-	"CMAKE_BUILD_TYPE": "Release",
         "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "Release",
+        "PROCESS_BRIDGE_BUILD_SNAPSHOTTER": true,
+        "PROCESS_BRIDGE_BUILD_LOADER": false,
+        "CMAKE_C_COMPILER_TARGET": "x86_64-pc-linux-gnu"
+      }
+    },
+    {
+      "name": "snapshotter-i386-debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/snapshotter-i386-debug",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "PROCESS_BRIDGE_BUILD_SNAPSHOTTER": true,
+        "PROCESS_BRIDGE_BUILD_LOADER": false,
+        "CMAKE_C_FLAGS": "-fsanitize=address -fsanitize=undefined -fno-omit-frame-pointer",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address -fsanitize=undefined",
         "CMAKE_C_COMPILER_TARGET": "i386-pc-linux-gnu"
+      }
+    },
+    {
+      "name": "snapshotter-i386-release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/snapshotter-i386-release",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "Release",
+        "PROCESS_BRIDGE_BUILD_SNAPSHOTTER": true,
+        "PROCESS_BRIDGE_BUILD_LOADER": false,
+        "CMAKE_C_COMPILER_TARGET": "i386-pc-linux-gnu"
+      }
+    },
+    {
+      "name": "loader-debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/loader-debug",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "PROCESS_BRIDGE_BUILD_SNAPSHOTTER": false,
+        "PROCESS_BRIDGE_BUILD_LOADER": true,
+        "CMAKE_C_FLAGS": "-fsanitize=address -fsanitize=undefined -fno-omit-frame-pointer",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address -fsanitize=undefined"
+      }
+    },
+    {
+      "name": "loader-release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/loader-release",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_BUILD_TYPE": "Release",
+        "PROCESS_BRIDGE_BUILD_SNAPSHOTTER": false,
+        "PROCESS_BRIDGE_BUILD_LOADER": true
       }
     }
   ],
-
+  
   "buildPresets": [
     {
-      "name": "x86_64-linux",
-      "configurePreset": "x86_64-linux"
+      "name": "snapshotter-x86_64-debug",
+      "configurePreset": "snapshotter-x86_64-debug"
     },
-
     {
-      "name": "i386-linux",
-      "configurePreset": "i386-linux"
+      "name": "snapshotter-x86_64-release",
+      "configurePreset": "snapshotter-x86_64-release"
+    },
+    {
+      "name": "snapshotter-i386-debug",
+      "configurePreset": "snapshotter-i386-debug"
+    },
+    {
+      "name": "snapshotter-i386-release",
+      "configurePreset": "snapshotter-i386-release"
+    },
+    {
+      "name": "loader-debug",
+      "configurePreset": "loader-debug"
+    },
+    {
+      "name": "loader-release",
+      "configurePreset": "loader-release"
     }
   ],
 
   "testPresets": [
     {
-      "name": "x86_64-linux",
-      "configurePreset": "x86_64-linux",
-      "output": {
-        "outputOnFailure": true
-      }
+      "name": "snapshotter-x86_64-debug",
+      "configurePreset": "snapshotter-x86_64-debug"
     },
-
     {
-      "name": "i386-linux",
-      "configurePreset": "i386-linux",
-      "output": {
-        "outputOnFailure": true
-      }
+      "name": "snapshotter-x86_64-release",
+      "configurePreset": "snapshotter-x86_64-release"
+    },
+    {
+      "name": "snapshotter-i386-debug",
+      "configurePreset": "snapshotter-i386-debug"
+    },
+    {
+      "name": "snapshotter-i386-release",
+      "configurePreset": "snapshotter-i386-release"
     }
   ]
 }
