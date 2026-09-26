@@ -23,5 +23,5 @@ target_link_libraries(pb-loader PRIVATE pb-loader-lib)
 include(CTest)
 
 if(BUILD_TESTING)
-  # add_subdirectory(tests)
+  add_subdirectory(tests)
 endif()

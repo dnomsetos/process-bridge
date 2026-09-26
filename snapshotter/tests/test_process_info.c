@@ -6,7 +6,7 @@
 #include <linux/maps_parser.h>
 #include <linux/process_info.h>
 
-#include "test_util.h"
+#include <test_util.h>
 
 static void write_fake_elf(const char *path, unsigned char ei_class) {
   FILE *f = fopen(path, "wb");

@@ -2,14 +2,15 @@
 
 #include <linux/maps_parser.h>
 
-#include "test_util.h"
+#include <test_util.h>
 
 TEST(parse_line_with_path_and_all_perms) {
   maps_entry_t entry;
   parse_maps_str(
       "55d1a2c00000-55d1a2c05000 r-xp 00001000 08:01 1234567 "
       "/usr/bin/process-bridge-x64\n",
-      &entry);
+      &entry
+  );
 
   ASSERT_EQ_UINT64(entry.start, 0x55d1a2c00000ULL);
   ASSERT_EQ_UINT64(entry.end, 0x55d1a2c05000ULL);
@@ -57,7 +58,8 @@ TEST(parse_line_large_addresses_no_overflow) {
   parse_maps_str(
       "ffffffffff600000-ffffffffff601000 --xp 00000000 00:00 0 "
       "[vsyscall]\n",
-      &entry);
+      &entry
+  );
 
   ASSERT_EQ_UINT64(entry.start, 0xffffffffff600000ULL);
   ASSERT_EQ_UINT64(entry.end, 0xffffffffff601000ULL);

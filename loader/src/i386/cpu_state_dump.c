@@ -13,6 +13,9 @@
 #define TRUE_GDT_ENTRY_DEFAULT_USER_CS 14
 #define TRUE_GDT_ENTRY_DEFAULT_USER_DS 15
 
+#define PB_TRAMPOLINE_ADDR (uint64_t)0x2000
+#define PB_TRAMPOLINE_SIZE (uint64_t)0x1000
+
 static uint64_t dump_gdt(uc_engine *uc, linux_i386_process_state_t *state) {
   PB_UC_CHECK(
       uc_mem_map(uc, PB_GDT_ADDR, PB_GDT_SIZE, UC_PROT_READ | UC_PROT_WRITE),
@@ -74,6 +77,44 @@ static uint64_t dump_gdt(uc_engine *uc, linux_i386_process_state_t *state) {
   return 0;
 }
 
+static uint64_t enter_ring3(uc_engine *uc, linux_i386_process_state_t *state) {
+  PB_UC_CHECK(uc_mem_map(uc,
+                         PB_TRAMPOLINE_ADDR,
+                         PB_TRAMPOLINE_SIZE,
+                         UC_PROT_READ | UC_PROT_WRITE | UC_PROT_EXEC),
+              "failed to map ring3 trampoline");
+
+  uint8_t iret_opcode = 0xCF;
+  PB_UC_CHECK(
+      uc_mem_write(uc, PB_TRAMPOLINE_ADDR, &iret_opcode, sizeof(iret_opcode)),
+      "failed to write ring3 trampoline stub"
+  );
+
+  uint32_t frame[5] = {
+      state->regs.eip,
+      state->regs.xcs,
+      state->regs.eflags,
+      state->regs.esp,
+      state->regs.xss,
+  };
+  uint64_t frame_addr = PB_TRAMPOLINE_ADDR + PB_TRAMPOLINE_SIZE / 2;
+  PB_UC_CHECK(uc_mem_write(uc, frame_addr, frame, sizeof(frame)),
+              "failed to write ring3 iret frame");
+
+  uint32_t trampoline_esp = (uint32_t)frame_addr;
+  PB_UC_CHECK(uc_reg_write(uc, UC_X86_REG_ESP, &trampoline_esp),
+              "failed to set up ring3 trampoline stack pointer");
+
+  PB_UC_CHECK(uc_emu_start(uc, PB_TRAMPOLINE_ADDR, 0, 0, 1),
+              "failed to execute ring3 iret trampoline");
+
+  PB_UC_CHECK(uc_mem_unmap(uc, PB_TRAMPOLINE_ADDR, PB_TRAMPOLINE_SIZE),
+              "failed to unmap ring3 trampoline");
+
+  LOG_DEBUG("entered ring 3 successfully via iret");
+  return 0;
+}
+
 static uint64_t dump_regs(uc_engine *uc, linux_i386_process_state_t *state) {
   PB_UC_CHECK(uc_reg_write(uc, UC_X86_REG_EBX, &state->regs.ebx),
               "failed to write ebx");
@@ -89,8 +130,6 @@ static uint64_t dump_regs(uc_engine *uc, linux_i386_process_state_t *state) {
               "failed to write ebp");
   PB_UC_CHECK(uc_reg_write(uc, UC_X86_REG_EAX, &state->regs.eax),
               "failed to write eax");
-  PB_UC_CHECK(uc_reg_write(uc, UC_X86_REG_ESP, &state->regs.esp),
-              "failed to write esp");
 
   LOG_DEBUG("general-purpose registers written successfully");
   LOG_DEBUG("eax: 0x%d" PRIx64, state->regs.eax);
@@ -100,16 +139,10 @@ static uint64_t dump_regs(uc_engine *uc, linux_i386_process_state_t *state) {
   LOG_DEBUG("esi: 0x%d" PRIx64, state->regs.esi);
   LOG_DEBUG("edi: 0x%d" PRIx64, state->regs.edi);
   LOG_DEBUG("ebp: 0x%d" PRIx64, state->regs.ebp);
-  LOG_DEBUG("esp: 0x%d" PRIx64, state->regs.esp);
 
-  PB_UC_CHECK(uc_reg_write(uc, UC_X86_REG_EIP, &state->regs.eip),
-              "failed to write eip");
-  PB_UC_CHECK(uc_reg_write(uc, UC_X86_REG_EFLAGS, &state->regs.eflags),
-              "failed to write eflags");
-
-  LOG_DEBUG("eip and eflags written successfully");
-  LOG_DEBUG("eip: 0x%d" PRIx64, state->regs.eip);
-  LOG_DEBUG("eflags: 0x%d" PRIx64, state->regs.eflags);
+  if (enter_ring3(uc, state) == (uint64_t)-1) {
+    return -1;
+  }
 
   PB_UC_CHECK(uc_reg_write(uc, UC_X86_REG_DS, &state->regs.xds),
               "failed to write xds");
@@ -119,18 +152,17 @@ static uint64_t dump_regs(uc_engine *uc, linux_i386_process_state_t *state) {
               "failed to write xfs");
   PB_UC_CHECK(uc_reg_write(uc, UC_X86_REG_GS, &state->regs.xgs),
               "failed to write xgs");
-  PB_UC_CHECK(uc_reg_write(uc, UC_X86_REG_CS, &state->regs.xcs),
-              "failed to write xcs");
-  PB_UC_CHECK(uc_reg_write(uc, UC_X86_REG_SS, &state->regs.xss),
-              "failed to write xss");
 
   LOG_DEBUG("segment registers written successfully");
   LOG_DEBUG("cs: 0x%d" PRIx64, state->regs.xcs);
+  LOG_DEBUG("ss: 0x%d" PRIx64, state->regs.xss);
   LOG_DEBUG("ds: 0x%d" PRIx64, state->regs.xds);
   LOG_DEBUG("es: 0x%d" PRIx64, state->regs.xes);
   LOG_DEBUG("fs: 0x%d" PRIx64, state->regs.xfs);
   LOG_DEBUG("gs: 0x%d" PRIx64, state->regs.xgs);
-  LOG_DEBUG("ss: 0x%d" PRIx64, state->regs.xss);
+  LOG_DEBUG("eip: 0x%d" PRIx64, state->regs.eip);
+  LOG_DEBUG("esp: 0x%d" PRIx64, state->regs.esp);
+  LOG_DEBUG("eflags: 0x%d" PRIx64, state->regs.eflags);
 
   return 0;
 }
@@ -144,7 +176,7 @@ uint64_t dump_i386_cpu_state(uc_engine *uc, linux_i386_process_state_t *state) {
     return -1;
   }
 
-  uint64_t entry = -1;
+  uint64_t entry = 0;
   PB_UC_CHECK(uc_reg_read(uc, UC_X86_REG_EIP, &entry), "failed to read eip");
   return entry;
 }

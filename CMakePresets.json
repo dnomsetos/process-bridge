@@ -11,7 +11,7 @@
         "CMAKE_BUILD_TYPE": "Debug",
         "PROCESS_BRIDGE_BUILD_SNAPSHOTTER": true,
         "PROCESS_BRIDGE_BUILD_LOADER": false,
-        "CMAKE_C_FLAGS": "-fsanitize=address -fsanitize=undefined -fno-omit-frame-pointer",
+        "CMAKE_C_FLAGS": "-fsanitize=address -fsanitize=undefined -fno-omit-frame-pointer -g",
         "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address -fsanitize=undefined",
         "CMAKE_C_COMPILER_TARGET": "x86_64-pc-linux-gnu"
       }
@@ -37,7 +37,7 @@
         "CMAKE_BUILD_TYPE": "Debug",
         "PROCESS_BRIDGE_BUILD_SNAPSHOTTER": true,
         "PROCESS_BRIDGE_BUILD_LOADER": false,
-        "CMAKE_C_FLAGS": "-fsanitize=address -fsanitize=undefined -fno-omit-frame-pointer",
+        "CMAKE_C_FLAGS": "-fsanitize=address -fsanitize=undefined -fno-omit-frame-pointer -g",
         "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address -fsanitize=undefined",
         "CMAKE_C_COMPILER_TARGET": "i386-pc-linux-gnu"
       }
@@ -63,7 +63,7 @@
         "CMAKE_BUILD_TYPE": "Debug",
         "PROCESS_BRIDGE_BUILD_SNAPSHOTTER": false,
         "PROCESS_BRIDGE_BUILD_LOADER": true,
-        "CMAKE_C_FLAGS": "-fsanitize=address -fsanitize=undefined -fno-omit-frame-pointer",
+        "CMAKE_C_FLAGS": "-fsanitize=address -fno-omit-frame-pointer -g",
         "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address -fsanitize=undefined"
       }
     },
@@ -110,19 +110,46 @@
   "testPresets": [
     {
       "name": "snapshotter-x86_64-debug",
-      "configurePreset": "snapshotter-x86_64-debug"
+      "configurePreset": "snapshotter-x86_64-debug",
+      "output": {
+        "outputOnFailure": true
+      }
     },
     {
       "name": "snapshotter-x86_64-release",
-      "configurePreset": "snapshotter-x86_64-release"
+      "configurePreset": "snapshotter-x86_64-release",
+      "output": {
+        "outputOnFailure": true
+      }
     },
     {
       "name": "snapshotter-i386-debug",
-      "configurePreset": "snapshotter-i386-debug"
+      "configurePreset": "snapshotter-i386-debug",
+      "output": {
+        "outputOnFailure": true
+      }
     },
     {
       "name": "snapshotter-i386-release",
-      "configurePreset": "snapshotter-i386-release"
+      "configurePreset": "snapshotter-i386-release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "loader-debug",
+      "configurePreset": "loader-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "loader-release",
+      "configurePreset": "loader-release",
+      "output": {
+        "outputOnFailure": true
+      }
     }
   ]
 }
+

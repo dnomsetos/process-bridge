@@ -60,7 +60,10 @@ typedef struct {
     long long _e = (long long)(expected);                                     \
     if (_a != _e) {                                                           \
       PB_FAIL_RETURN("ASSERT_EQ_INT(%s, %s) failed: got %lld, expected %lld", \
-                     #actual, #expected, _a, _e);                             \
+                     #actual,                                                 \
+                     #expected,                                               \
+                     _a,                                                      \
+                     _e);                                                     \
     }                                                                         \
   } while (0)
 
@@ -71,7 +74,11 @@ typedef struct {
     if (_a != _e) {                                                       \
       PB_FAIL_RETURN(                                                     \
           "ASSERT_EQ_UINT64(%s, %s) failed: got 0x%llx, expected 0x%llx", \
-          #actual, #expected, _a, _e);                                    \
+          #actual,                                                        \
+          #expected,                                                      \
+          _a,                                                             \
+          _e                                                              \
+      );                                                                  \
     }                                                                     \
   } while (0)
 
@@ -82,7 +89,11 @@ typedef struct {
     if (strcmp(_a, _e) != 0) {                                         \
       PB_FAIL_RETURN(                                                  \
           "ASSERT_EQ_STR(%s, %s) failed: got \"%s\", expected \"%s\"", \
-          #actual, #expected, _a, _e);                                 \
+          #actual,                                                     \
+          #expected,                                                   \
+          _a,                                                          \
+          _e                                                           \
+      );                                                               \
     }                                                                  \
   } while (0)
 
@@ -94,19 +105,21 @@ typedef struct {
     return;                                               \
   } while (0)
 
-#define TEST_MAIN()                                                          \
-  int main(void) {                                                           \
-    int total = pb_test_case_count;                                          \
-    for (int i = 0; i < total; ++i) {                                        \
-      pb_test_current_name = pb_test_cases[i].name;                          \
-      int failures_before = pb_test_failures;                                \
-      fprintf(stderr, "RUN  %s\n", pb_test_cases[i].name);                   \
-      pb_test_cases[i].fn();                                                 \
-      if (pb_test_failures == failures_before) {                             \
-        fprintf(stderr, "OK   %s\n", pb_test_cases[i].name);                 \
-      }                                                                      \
-    }                                                                        \
-    fprintf(stderr, "---\n%d test case(s), %d failed assertion(s)\n", total, \
-            pb_test_failures);                                               \
-    return pb_test_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;              \
+#define TEST_MAIN()                                             \
+  int main(void) {                                              \
+    int total = pb_test_case_count;                             \
+    for (int i = 0; i < total; ++i) {                           \
+      pb_test_current_name = pb_test_cases[i].name;             \
+      int failures_before = pb_test_failures;                   \
+      fprintf(stderr, "RUN  %s\n", pb_test_cases[i].name);      \
+      pb_test_cases[i].fn();                                    \
+      if (pb_test_failures == failures_before) {                \
+        fprintf(stderr, "OK   %s\n", pb_test_cases[i].name);    \
+      }                                                         \
+    }                                                           \
+    fprintf(stderr,                                             \
+            "---\n%d test case(s), %d failed assertion(s)\n",   \
+            total,                                              \
+            pb_test_failures);                                  \
+    return pb_test_failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE; \
   }

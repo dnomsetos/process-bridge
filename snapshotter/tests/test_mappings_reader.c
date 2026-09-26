@@ -9,8 +9,8 @@
 #include <linux/mappings_reader.h>
 #include <linux/maps_parser.h>
 
-#include "ptrace_probe.h"
-#include "test_util.h"
+#include <ptrace_probe.h>
+#include <test_util.h>
 
 TEST(dump_child_mappings_round_trips) {
   if (!ptrace_traceme_is_usable()) {

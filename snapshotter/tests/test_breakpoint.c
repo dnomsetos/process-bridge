@@ -10,8 +10,8 @@
 
 #include <linux/breakpoint.h>
 
-#include "ptrace_probe.h"
-#include "test_util.h"
+#include <ptrace_probe.h>
+#include <test_util.h>
 
 #ifndef PB_TEST_TARGET_PATH
 #error "PB_TEST_TARGET_PATH must be defined by the build system"
@@ -20,8 +20,9 @@
 static int find_symbol_address(const char *binary_path, const char *symbol,
                                uintptr_t *out_addr) {
   char cmd[1024];
-  int written = snprintf(cmd, sizeof(cmd), "nm '%s' 2>/dev/null | grep ' %s$'",
-                         binary_path, symbol);
+  int written = snprintf(
+      cmd, sizeof(cmd), "nm '%s' 2>/dev/null | grep ' %s$'", binary_path, symbol
+  );
   if (written < 0 || (size_t)written >= sizeof(cmd)) {
     return 0;
   }
