@@ -9,6 +9,12 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+if(PROCESS_BRIDGE_SANITIZERS)
+  add_compile_options(-fsanitize=address -fno-omit-frame-pointer)
+
+  add_link_options(-fsanitize=address)
+endif()
+
 add_library(pb-common INTERFACE)
 
 target_include_directories(pb-common
@@ -19,6 +25,7 @@ option(PROCESS_BRIDGE_BUILD_LOADER "Build loader" OFF)
 
 add_subdirectory(utilities/log)
 add_subdirectory(utilities/test)
+add_subdirectory(python)
 
 include(CTest)
 

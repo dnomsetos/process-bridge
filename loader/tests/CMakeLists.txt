@@ -7,7 +7,7 @@ foreach(TEST_SRC ${PB_LOADER_TEST_SOURCES})
   add_executable(${TEST_BASE} "${TEST_SRC}")
 
   target_include_directories(${TEST_BASE} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-  target_link_libraries(${TEST_BASE} PRIVATE pb-loader-lib pb-test)
+  target_link_libraries(${TEST_BASE} PRIVATE pb-loader pb-test)
 
   add_test(NAME ${TEST_BASE} COMMAND ${TEST_BASE})
   set_tests_properties(${TEST_BASE} PROPERTIES TIMEOUT 60)

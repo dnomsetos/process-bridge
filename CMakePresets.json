@@ -11,7 +11,8 @@
         "CMAKE_BUILD_TYPE": "Debug",
         "PROCESS_BRIDGE_BUILD_SNAPSHOTTER": true,
         "PROCESS_BRIDGE_BUILD_LOADER": false,
-        "CMAKE_C_FLAGS": "-fsanitize=address -fsanitize=undefined -fno-omit-frame-pointer -g",
+	"PROCESS_BRIDGE_SANITIZERS": true,
+        "CMAKE_C_FLAGS": "-g",
         "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address -fsanitize=undefined",
         "CMAKE_C_COMPILER_TARGET": "x86_64-pc-linux-gnu"
       }
@@ -37,7 +38,8 @@
         "CMAKE_BUILD_TYPE": "Debug",
         "PROCESS_BRIDGE_BUILD_SNAPSHOTTER": true,
         "PROCESS_BRIDGE_BUILD_LOADER": false,
-        "CMAKE_C_FLAGS": "-fsanitize=address -fsanitize=undefined -fno-omit-frame-pointer -g",
+        "PROCESS_BRIDGE_SANITIZERS": true,
+        "CMAKE_C_FLAGS": "-g",
         "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address -fsanitize=undefined",
         "CMAKE_C_COMPILER_TARGET": "i386-pc-linux-gnu"
       }
@@ -63,7 +65,8 @@
         "CMAKE_BUILD_TYPE": "Debug",
         "PROCESS_BRIDGE_BUILD_SNAPSHOTTER": false,
         "PROCESS_BRIDGE_BUILD_LOADER": true,
-        "CMAKE_C_FLAGS": "-fsanitize=address -fno-omit-frame-pointer -g",
+	"PROCESS_BRIDGE_SANITIZERS": true,
+        "CMAKE_C_FLAGS": "-g",
         "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address -fsanitize=undefined"
       }
     },
