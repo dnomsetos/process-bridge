@@ -25,7 +25,6 @@ option(PROCESS_BRIDGE_BUILD_LOADER "Build loader" OFF)
 
 add_subdirectory(utilities/log)
 add_subdirectory(utilities/test)
-add_subdirectory(python)
 
 include(CTest)
 
