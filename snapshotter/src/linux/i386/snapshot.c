@@ -1,0 +1,104 @@
+#ifdef __i386__
+
+#include <stddef.h>
+#include <sys/ptrace.h>
+#include <sys/types.h>
+
+#include <linux/snapshot.h>
+#include <log.h>
+
+#define GDT_ENTRY_TLS_MIN_TRUE_I386 6
+#define GDT_ENTRY_TLS_MIN_COMP_MODE 12
+
+void create_snapshot(process_state_t *snapshot,
+                     const breakpoint_t *breakpoint) {
+  pid_t pid = breakpoint->pid;
+
+  if (ptrace(PTRACE_GETREGS, pid, NULL, &snapshot->regs) == -1) {
+    LOG_FATAL_ERRNO("ptrace(PTRACE_GETREGS, pid=%d) failed", pid);
+  }
+
+  int start = GDT_ENTRY_TLS_MIN_TRUE_I386 + 1;
+  int end = start + GDT_ENTRY_TLS_ENTRIES - 1;
+  int gdt_entry_tls_min = GDT_ENTRY_TLS_MIN_TRUE_I386;
+
+  if (ptrace(
+          PTRACE_GET_THREAD_AREA, pid, gdt_entry_tls_min, &snapshot->tls[0]
+      ) == -1) {
+    gdt_entry_tls_min = GDT_ENTRY_TLS_MIN_COMP_MODE;
+
+    start = GDT_ENTRY_TLS_MIN_COMP_MODE;
+    end = start + GDT_ENTRY_TLS_ENTRIES;
+
+    LOG_DEBUG("using compatibility mode gdt entry for tls");
+  } else {
+    LOG_DEBUG("using true i386 mode gdt entry for tls");
+  }
+
+  for (int i = start; i < end; ++i) {
+    if (ptrace(PTRACE_GET_THREAD_AREA,
+               pid,
+               i,
+               &snapshot->tls[i - gdt_entry_tls_min]) == -1) {
+      LOG_FATAL_ERRNO("ptrace(PTRACE_GET_THREAD_AREA, pid=%d, index=%d) failed",
+                      pid,
+                      i);
+    }
+  }
+
+  LOG_DEBUG("ebp: 0x%x", snapshot->regs.ebp);
+  LOG_DEBUG("ebx: 0x%x", snapshot->regs.ebx);
+  LOG_DEBUG("eax: 0x%x", snapshot->regs.eax);
+  LOG_DEBUG("ecx: 0x%x", snapshot->regs.ecx);
+  LOG_DEBUG("edx: 0x%x", snapshot->regs.edx);
+  LOG_DEBUG("esi: 0x%x", snapshot->regs.esi);
+  LOG_DEBUG("edi: 0x%x", snapshot->regs.edi);
+  LOG_DEBUG("orig_eax: 0x%x", snapshot->regs.orig_eax);
+  LOG_DEBUG("eip: 0x%x", snapshot->regs.eip);
+  LOG_DEBUG("xcs: 0x%x", snapshot->regs.xcs);
+  LOG_DEBUG("eflags: 0x%x", snapshot->regs.eflags);
+  LOG_DEBUG("esp: 0x%x", snapshot->regs.esp);
+  LOG_DEBUG("xcs: 0x%x", snapshot->regs.xcs);
+  LOG_DEBUG("xss: 0x%x", snapshot->regs.xss);
+  LOG_DEBUG("xds: 0x%x", snapshot->regs.xds);
+  LOG_DEBUG("xes: 0x%x", snapshot->regs.xes);
+  LOG_DEBUG("xfs: 0x%x", snapshot->regs.xfs);
+  LOG_DEBUG("xgs: 0x%x", snapshot->regs.xgs);
+
+  for (int i = 0; i < GDT_ENTRY_TLS_ENTRIES; ++i) {
+    LOG_DEBUG(
+        "gdt[%d]:\n"
+        "  user_desc {\n"
+        "    entry_number    = %u (0x%08x)\n"
+        "    base_addr       = %u (0x%08x)\n"
+        "    limit           = %u (0x%08x)\n"
+        "    seg_32bit       = %u\n"
+        "    contents        = %u\n"
+        "    read_exec_only  = %u\n"
+        "    limit_in_pages  = %u\n"
+        "    seg_not_present = %u\n"
+        "    useable         = %u\n"
+        "}\n",
+        i + gdt_entry_tls_min,
+        snapshot->tls[i].entry_number,
+        snapshot->tls[i].entry_number,
+        snapshot->tls[i].base_addr,
+        snapshot->tls[i].base_addr,
+        snapshot->tls[i].limit,
+        snapshot->tls[i].limit,
+        snapshot->tls[i].seg_32bit,
+        snapshot->tls[i].contents,
+        snapshot->tls[i].read_exec_only,
+        snapshot->tls[i].limit_in_pages,
+        snapshot->tls[i].seg_not_present,
+        snapshot->tls[i].useable
+    );
+  }
+
+  LOG_INFO("snapshot captured for pid %d at eip=0x%x gs=0x%x",
+           pid,
+           snapshot->regs.eip,
+           snapshot->regs.xgs);
+}
+
+#endif

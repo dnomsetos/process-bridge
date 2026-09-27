@@ -1,27 +1,25 @@
 [build-system]
-requires = [
-  "scikit-build-core>=0.11",
-]
+requires = ["scikit-build-core>=0.10", "cmake>=3.20", "ninja"]
 build-backend = "scikit_build_core.build"
 
 [project]
 name = "process-bridge"
 version = "0.1.0"
-description = "Process snapshotting and emulation framework"
-requires-python = ">=3.12"
-
+requires-python = ">=3.10"
 dependencies = [
-  "qiling",
+    "unicorn==2.1.4",
+    "qiling==1.4.6",
 ]
 
-[project.scripts]
-process-bridge-x86_64-linux = "process_bridge.scripts:x86_64_linux"
-process-bridge-i386-linux = "process_bridge.scripts:i386_linux"
-
-
 [tool.scikit-build]
-cmake.version = ">=3.20"
-cmake.source-dir = "packaging"
-build-dir = "build/{wheel_tag}"
+cmake.source-dir = "."
+build-dir = "build/loader-release"
+cmake.build-type = "Release"
+cmake.args = [
+  "-G", "Ninja",
+  "-DCMAKE_C_COMPILER=clang",
+  "-DPROCESS_BRIDGE_BUILD_SNAPSHOTTER=OFF",
+  "-DPROCESS_BRIDGE_BUILD_LOADER=ON"
+]
 
-wheel.packages = ["loader/process_bridge"]
+wheel.packages = ["python/process_bridge"]

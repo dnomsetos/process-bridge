@@ -1,11 +1,9 @@
-from process_bridge import snapshot_init
-from capstone import Cs, CS_ARCH_X86, CS_MODE_64
-from qiling.log import QL_VERBOSE
-from unicorn.unicorn import UcError
+import process_bridge
+
+from qiling.const import QL_ARCH, QL_VERBOSE
 
 if __name__ == "__main__":
-    ql, entry = snapshot_init.from_snapshot(
-        "x86_64", "dummy_rootfs", "ql_snapshot", QL_VERBOSE.DEBUG
+    ql, entry = process_bridge.make_qiling_from_snapshot(
+        "ql_snapshot", QL_ARCH.X8664, verbose=QL_VERBOSE.DEBUG
     )
-
     ql.emu_start(begin=entry, end=0)

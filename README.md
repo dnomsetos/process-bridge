@@ -2,300 +2,363 @@
 
 [![CI](https://github.com/dnomsetos/process-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/dnomsetos/process-bridge/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-`process-bridge` is a tool for creating a snapshot of a native Linux process at a breakpoint and restoring that state inside the [Qiling](https://qiling.io/) emulator to continue execution from the same point.
+**process-bridge** snapshots the execution state of a native Linux process and restores that state in an emulator.
 
-The snapshot contains, among other things, the process register state and memory mappings.
+The project consists of two main components:
 
-The project consists of two main parts:
+* **snapshotter** — a native C program that launches and traces a target process, stops it at a breakpoint, captures its CPU state and memory mappings, and writes a snapshot;
+* **loader** — a native C library that restores a snapshot into [Unicorn](https://www.unicorn-engine.org/).
 
-* `native/` — the native C implementation that creates a snapshot of the target process;
-* `loader/process_bridge/` — the Python part that loads the snapshot and restores the process in the Qiling environment.
+The Python package provides a `ctypes` wrapper around the loader and a helper for creating a [Qiling](https://qiling.io/) instance from a snapshot.
 
-## Supported Architectures
+The main use case is to reach a difficult execution state natively, capture it once, and then reproduce it in an emulator for debugging, analysis, instrumentation, or fuzzing.
 
-The following architectures are currently supported:
+## Supported architectures
 
 * `x86_64`
 * `i386`
 
+The snapshotter must be built for the architecture of the target process.
+
 ## Requirements
 
-`process-bridge` works only on **Linux**.
+`process-bridge` requires Linux.
 
-The Python package requires:
+Native components:
 
-* Python ≥ 3.12
-* `pip`
+* Clang
+* CMake >= 3.20
+* Ninja
 
-The native components are automatically built with CMake and Clang during package installation.
+Python package:
+
+* Python >= 3.10
+* `unicorn==2.1.4`
+* `qiling==1.4.6`
+
+Qiling is only required when using the Python Qiling helper. The native loader uses Unicorn directly.
+
+For building the 32-bit snapshotter on Debian/Ubuntu:
+
+```bash
+sudo dpkg --add-architecture i386
+sudo apt update
+sudo apt install libc6-dev:i386 gcc-multilib g++-multilib
+```
+
+A development environment is also provided by [`Dockerfile`](Dockerfile).
 
 ## Installation
 
-Create a virtual environment and install the package:
+The Python package builds the native loader automatically through `scikit-build-core`:
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 
-pip install --upgrade pip
-pip install .
+python -m pip install --upgrade pip
+python -m pip install .
 ```
 
-During installation, `scikit-build-core` invokes CMake and builds the native components for both supported architectures.
-
-After installation, two commands will be available:
-
-```bash
-process-bridge-x86_64-linux
-process-bridge-i386-linux
-```
-
-Each command runs the native component for the corresponding architecture.
-
-## Logging
-
-The logging level can be configured using the `PROCESS_BRIDGE_LOG_LEVEL` environment variable.
-
-The following levels are supported:
-
-* `DEBUG`
-* `INFO`
-* `WARN`
-* `WARNING`
-* `ERROR`
-
-For example:
-
-```bash
-PROCESS_BRIDGE_LOG_LEVEL=DEBUG process-bridge-x86_64-linux ...
-```
-
-or:
-
-```bash
-PROCESS_BRIDGE_LOG_LEVEL=ERROR process-bridge-i386-linux ...
-```
-
-This variable is used by both the Python and native parts of `process-bridge`, so the same setting controls the logging level of the entire tool.
-
-The default logging level is `INFO`.
-
-## Usage
-
-### x86_64
-
-After installation, the package provides:
-
-```bash
-process-bridge-x86_64-linux \
-    <breakpoint_offset_hex> \
-    <path-to-target-binary> \
-    [target-args...]
-```
-
-### i386
-
-For a 32-bit process, use:
-
-```bash
-process-bridge-i386-linux \
-    <breakpoint_offset_hex> \
-    <path-to-target-binary> \
-    [target-args...]
-```
-
-Arguments:
-
-* `breakpoint_offset_hex` — the breakpoint offset relative to the loaded image base, specified in hexadecimal;
-* `path-to-target-binary` — path to the executable to trace;
-* `target-args...` — optional arguments passed to the target process.
-
-The tool launches the target process, sets a breakpoint at:
-
-```text
-image_base + breakpoint_offset_hex
-```
-
-and creates a snapshot when the breakpoint is reached.
-
-The snapshot is written to:
-
-```text
-ql_snapshot
-```
-
-relative to the current working directory.
-
-### PIE binaries
-
-For a PIE binary, `breakpoint_offset_hex` corresponds to the virtual address of the symbol in the binary.
-
-The address can be obtained, for example, with:
-
-```bash
-nm <binary>
-```
-
-or:
-
-```bash
-objdump -d <binary>
-```
-
-See [`examples/hello`](examples/hello) for a complete example.
-
-## Loading a Snapshot from Python
-
-Once a snapshot has been created, it can be loaded from Python and execution can be resumed in Qiling:
+The package exposes:
 
 ```python
-from process_bridge import snaphot_init
+import process_bridge
 
-ql, entry = snaphot_init.from_snapshot(
-    "x86_64",
-    "dummy_rootfs",
-    "ql_snapshot",
-    QL_VERBOSE.DEBUG,
-)
-
-ql.emu_start(
-    begin=entry,
-    end=...,
-)
+process_bridge.restore_snapshot(...)
+process_bridge.make_qiling_from_snapshot(...)
 ```
 
-`rootfs_path` must point to an existing directory. The directory may be empty.
+The snapshotter is built separately with CMake.
 
-Qiling requires a `rootfs` during initialization, but its contents do not matter in this scenario: the default memory mappings created by Qiling are removed and replaced with the mappings restored from the snapshot before execution resumes.
+## Building from source
 
-See the complete examples:
+### Snapshotter
 
-* [`examples/hello`](examples/hello)
-* [`examples/nginx`](examples/nginx)
-
-## Building from Source
-
-For development, the native components can be built directly with CMake.
-
-The target architecture is selected using a CMake preset.
-
-### x86_64
+Build the x86_64 release version:
 
 ```bash
-cmake --preset x86_64-linux
-cmake --build --preset x86_64-linux
+cmake --preset snapshotter-x86_64-release
+cmake --build --preset snapshotter-x86_64-release
 ```
 
-The build output will be located in:
+The executable is produced at:
 
 ```text
-build/x86_64-linux/
-```
-
-The main artifacts are:
-
-```text
-process-bridge
-libprocess-bridge-lib.so
-```
-
-### i386
-
-```bash
-cmake --preset i386-linux
-cmake --build --preset i386-linux
-```
-
-The build output will be located in:
-
-```text
-build/i386-linux/
-```
-
-### Native Tests
-
-For x86_64:
-
-```bash
-ctest --preset x86_64-linux --output-on-failure
+build/snapshotter-x86_64-release/snapshotter/pb-snapshotter
 ```
 
 For i386:
 
 ```bash
-ctest --preset i386-linux --output-on-failure
+cmake --preset snapshotter-i386-release
+cmake --build --preset snapshotter-i386-release
 ```
+
+Debug presets enable AddressSanitizer and UndefinedBehaviorSanitizer:
+
+```bash
+cmake --preset snapshotter-x86_64-debug
+cmake --build --preset snapshotter-x86_64-debug
+```
+
+### Loader
+
+Build the loader directly:
+
+```bash
+cmake --preset loader-release
+cmake --build --preset loader-release
+```
+
+The resulting library is:
+
+```text
+build/loader-release/loader/libpb-loader.so
+```
+
+The Python package builds and installs the loader automatically.
+
+## Taking a snapshot
+
+The snapshotter interface is:
+
+```text
+pb-snapshotter <breakpoint_offset_hex> <child_path> [child_args...]
+```
+
+Example:
+
+```bash
+./build/snapshotter-x86_64-release/snapshotter/pb-snapshotter \
+    0x114d \
+    ./hello
+```
+
+The snapshotter:
+
+1. starts the target under `ptrace`;
+2. determines the target image base;
+3. places an `INT3` breakpoint at `image_base + breakpoint_offset_hex`;
+4. resumes execution until the breakpoint is reached;
+5. captures the CPU state;
+6. reads `/proc/<pid>/maps` and the target memory;
+7. writes the snapshot to `ql_snapshot`;
+8. terminates the target.
+
+### Choosing the breakpoint
+
+The breakpoint is an **offset from the loaded image base**, not necessarily an absolute runtime address.
+
+For PIE executables, use the virtual address of the desired instruction in the ELF image:
+
+```bash
+objdump -d ./hello
+nm ./hello
+```
+
+A useful snapshot point is often the instruction where execution should resume. For example, placing the breakpoint on a `call` instruction captures the state immediately before the call, including arguments already prepared by the caller.
+
+See [`examples/hello`](examples/hello) and [`examples/nginx`](examples/nginx) for complete examples.
+
+## Snapshot contents
+
+A snapshot contains:
+
+* integer CPU registers;
+* process memory mappings;
+* the contents of captured mappings;
+* mapping permissions, sharing information, file offset, and path.
+
+For `i386`, it also contains the TLS descriptors required to restore the captured CPU state.
+
+Special mappings such as `[vvar]`, `[vvar_vclock]`, and `[vsyscall]` are skipped. If a readable mapping cannot be copied successfully, the affected chunks are replaced with zeroes.
+
+## Restoring a snapshot with Unicorn
+
+The Python API restores a snapshot into an existing `unicorn.Uc` instance:
+
+```python
+import unicorn
+import process_bridge
+
+uc = unicorn.Uc(unicorn.UC_ARCH_X86, unicorn.UC_MODE_64)
+
+entry = process_bridge.restore_snapshot(
+    uc,
+    "ql_snapshot",
+)
+
+uc.emu_start(
+    begin=entry,
+    end=0,
+)
+```
+
+`restore_snapshot()` returns the restored instruction pointer. Memory mappings and CPU registers are restored before execution resumes.
+
+The native loader exposes:
+
+```c
+uint64_t pb_restore_snapshot(
+    uc_engine *uc,
+    const char *snapshot_path
+);
+```
+
+It also provides:
+
+```c
+uint64_t pb_create_from_snapshot(
+    uc_arch arch,
+    uc_mode mode,
+    uc_engine **engine,
+    const char *snapshot_path
+);
+```
+
+Supported Unicorn configurations:
+
+* `UC_ARCH_X86 + UC_MODE_32`
+* `UC_ARCH_X86 + UC_MODE_64`
+
+## Restoring a snapshot with Qiling
+
+The Python package includes a Qiling helper:
+
+```python
+import process_bridge
+from qiling.const import QL_ARCH, QL_VERBOSE
+
+ql, entry = process_bridge.make_qiling_from_snapshot(
+    "ql_snapshot",
+    QL_ARCH.X8664,
+    verbose=QL_VERBOSE.DEBUG,
+)
+
+ql.emu_start(
+    begin=entry,
+    end=0,
+)
+```
+
+The helper removes Qiling's initial memory mappings and replaces them with the mappings restored from the snapshot.
+
+Qiling still requires a rootfs. For the current workflow, an empty directory is sufficient:
+
+```bash
+mkdir -p dummy_rootfs
+```
+
+## Instruction compatibility
+
+The restored process may contain CPU instructions that are not supported by the Unicorn version used by the emulator. Applications using AVX2, AVX-512, or instructions such as `XSAVEC` may therefore fail during emulation.
+
+In such cases, it can be useful to disable CPU features when starting the target process. For example:
+
+```bash
+GLIBC_TUNABLES=glibc.cpu.hwcaps=-XSAVEC,-AVX,-AVX2,-AVX512 \
+./build/snapshotter-x86_64-release/snapshotter/pb-snapshotter \
+    <breakpoint_offset_hex> \
+    <path-to-target-binary> \
+    [target-args...]
+```
+
+This makes glibc avoid using the specified CPU features when selecting optimized implementations, which can prevent unsupported instructions from being executed in the restored process.
+
+`GLIBC_TUNABLES` only affects glibc's CPU feature selection. It does not add support for unsupported instructions to Unicorn.
+
+## Logging
+
+The native components use `PROCESS_BRIDGE_LOG_LEVEL`.
+
+Supported levels:
+
+* `DEBUG`
+* `INFO`
+* `WARN`
+* `ERROR`
+
+The default is `INFO`.
+
+Example:
+
+```bash
+PROCESS_BRIDGE_LOG_LEVEL=DEBUG \
+./build/snapshotter-x86_64-release/snapshotter/pb-snapshotter \
+    0x114d ./hello
+```
+
+## Project layout
+
+```text
+.
+├── common/                  Shared Linux data structures
+├── snapshotter/             Native process snapshotter
+├── loader/                  Unicorn-based snapshot loader
+├── python/process_bridge/   Python bindings and Qiling helper
+├── examples/                Example workflows
+├── utilities/               Shared native utilities
+├── CMakeLists.txt
+├── CMakePresets.json
+├── Dockerfile
+└── pyproject.toml
+```
+
+## Testing
+
+Snapshotter tests:
+
+```bash
+cmake --preset snapshotter-x86_64-debug
+cmake --build --preset snapshotter-x86_64-debug
+ctest --preset snapshotter-x86_64-debug --output-on-failure
+```
+
+Loader tests:
+
+```bash
+cmake --preset loader-debug
+cmake --build --preset loader-debug
+ctest --preset loader-debug --output-on-failure
+```
+
+The debug presets enable AddressSanitizer and UndefinedBehaviorSanitizer.
 
 ## Docker
 
-A `Dockerfile` based on Ubuntu 24.04 is provided for a reproducible development environment.
-
-Build the image:
+Build the development image:
 
 ```bash
 docker build -t process-bridge .
 ```
 
-Run the container with the project sources mounted:
+Run it with the project mounted into `/workspace`:
 
 ```bash
 docker run --rm -it \
-  -v "$PWD:/workspace" \
-  process-bridge
+    -v "$PWD:/workspace" \
+    process-bridge
 ```
 
-Once inside the container, the package can be installed normally:
+## Limitations
 
-```bash
-pip install .
-```
+The snapshot is a snapshot of **process memory and CPU state**, not a complete operating-system checkpoint.
 
-Alternatively, the native components can be built directly with CMake.
+The current implementation does not restore external resources such as:
+
+* file descriptors;
+* sockets;
+* kernel-backed resources;
+* signal state;
+* threads other than the traced thread;
+* other runtime state not represented by captured memory and registers.
+
+Restored execution therefore has to avoid depending on unsupported external state.
+
+The snapshot format is currently an internal implementation detail and is not intended as a stable interchange format.
 
 ## License
 
-This project is licensed under the MIT License.
-
-See [`LICENSE`](LICENSE).
-
-### Third-party Dependencies
-
-The project uses the [Qiling Framework](https://qiling.io/) as its emulation environment.
-
-Qiling is an external dependency of the project and is distributed under its own license. This does not affect the MIT license applied to the `process-bridge` source code.
-
-## Instruction Compatibility
-
-The restored process may contain CPU instructions that are not supported by
-the Unicorn version used by Qiling. For example, applications using AVX2,
-AVX-512, or instructions such as `XSAVEC` may fail during emulation.
-
-In such cases, it may be necessary to disable the corresponding CPU features
-when starting the target process. For example:
-
-```bash
-GLIBC_TUNABLES=glibc.cpu.hwcaps=-XSAVEC,-AVX,-AVX2,-AVX512 \
-process-bridge-x86_64-linux <breakpoint_offset_hex> <path-to-target-binary> [target-args...]
-```
-
-This makes glibc avoid using the specified CPU features when selecting its
-optimized implementations, which can prevent unsupported instructions from
-being executed by the restored process.
-
-## Project Status
-
-`process-bridge` is a new project and is currently in an early stage of
-development. Snapshot support is intentionally limited at this point.
-
-The current implementation only captures and restores:
-
-* process memory mappings;
-* integer CPU registers.
-
-Many other parts of the process state are not supported yet, including file
-descriptors, sockets, and other OS resources.
-
-As a result, `process-bridge` currently works best with applications and
-execution points that do not depend heavily on unsupported process resources.
-Support for additional types of process state may be added in the future.
+`process-bridge` is released under the [MIT License](LICENSE).
 
