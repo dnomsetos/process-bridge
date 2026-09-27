@@ -1,0 +1,25 @@
+[build-system]
+requires = ["scikit-build-core>=0.10", "cmake>=3.20", "ninja"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "process-bridge"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "unicorn==2.1.4",
+    "qiling==1.4.6",
+]
+
+[tool.scikit-build]
+cmake.source-dir = "."
+build-dir = "build/loader-release"
+cmake.build-type = "Release"
+cmake.args = [
+  "-G", "Ninja",
+  "-DCMAKE_C_COMPILER=clang",
+  "-DPROCESS_BRIDGE_BUILD_SNAPSHOTTER=OFF",
+  "-DPROCESS_BRIDGE_BUILD_LOADER=ON"
+]
+
+wheel.packages = ["python/process_bridge"]

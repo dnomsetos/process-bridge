@@ -22,6 +22,8 @@ static int read_bytes(const uint8_t *data, size_t file_size, size_t *offset,
 }
 
 uint64_t dump_snapshot(uc_engine *uc, const char *snapshot_path) {
+  uint64_t entry = -1;
+
   int fd = open(snapshot_path, O_RDONLY);
   if (fd == -1) {
     LOG_FATAL_ERRNO("failed to open snapshot file '%s'", snapshot_path);
@@ -171,7 +173,7 @@ uint64_t dump_snapshot(uc_engine *uc, const char *snapshot_path) {
     mappings_loaded++;
   }
 
-  uint64_t entry = dump_cpu_state(uc, &cpu_state);
+  entry = dump_cpu_state(uc, &cpu_state);
   LOG_DEBUG("loaded snapshot '%s': %zu mapping(s), %zu bytes total",
             snapshot_path,
             mappings_loaded,

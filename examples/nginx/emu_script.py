@@ -1,9 +1,7 @@
-from process_bridge import snapshot_init
-from capstone import Cs, CS_ARCH_X86, CS_MODE_64
-from unicorn.unicorn import UcError
+import process_bridge
+
 from qiling import Qiling
-from qiling.const import QL_VERBOSE
-from typing import Any
+from qiling.const import QL_VERBOSE, QL_ARCH
 
 
 def read_data(ql: Qiling) -> None:
@@ -17,8 +15,8 @@ def read_data(ql: Qiling) -> None:
 
 
 if __name__ == "__main__":
-    ql, entry = snapshot_init.from_snapshot(
-        "x86_64", "dummy_rootfs", "ql_snapshot", QL_VERBOSE.DEBUG
+    ql, entry = process_bridge.make_qiling_from_snapshot(
+        "ql_snapshot", QL_ARCH.X8664, verbose=QL_VERBOSE.DEBUG
     )
 
     read_data(ql)
