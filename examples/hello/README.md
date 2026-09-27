@@ -70,13 +70,13 @@ The exact address will depend on the compiler and the generated binary.
 Install `process-bridge` from the root of the project:
 
 ```bash
-pip install .
+pip install -e .
 ```
 
 Then run the x86_64 native component:
 
 ```bash
-process-bridge-x86_64-linux 0x114d hello
+/path/to/process-bridge/build/snapshotter-x86_64-release/snapshotter/pb-snapshotter 0x114d hello
 ```
 
 This starts `hello`, stops it immediately before the `call repeat` instruction,
@@ -90,7 +90,8 @@ To enable detailed diagnostic output, set the logging level through
 `PROCESS_BRIDGE_LOG_LEVEL`:
 
 ```bash
-PROCESS_BRIDGE_LOG_LEVEL=DEBUG process-bridge-x86_64-linux 0x114d ./hello
+PROCESS_BRIDGE_LOG_LEVEL=DEBUG /path/to/process-bridge/build/snapshotter-x86_64-release/snapshotter/pb-snapshotter 0x114d ./hello
+
 ```
 
 ## 4. Resume execution in Qiling
@@ -99,57 +100,18 @@ PROCESS_BRIDGE_LOG_LEVEL=DEBUG process-bridge-x86_64-linux 0x114d ./hello
 instruction pointer:
 
 ```python
-from process_bridge import snaphot_init
+import process_bridge
+
+from qiling.const import QL_ARCH, QL_VERBOSE
 
 if __name__ == "__main__":
-  ql, entry = snaphot_init.from_snapshot(
-    "x86_64",
-    "dummy_rootfs",
-    "ql_snapshot",
-  )
-
-  ql.emu_start(begin=entry, end=0)
+    ql, entry = process_bridge.make_qiling_from_snapshot(
+        "ql_snapshot", QL_ARCH.X8664, verbose=QL_VERBOSE.DEBUG
+    )
+    ql.emu_start(begin=entry, end=0)
 ```
 
 `entry` is the address restored from the process's `rip` and points to the
 `call repeat` instruction.
 
-The example intentionally uses:
-
-```python
-ql.emu_start(begin=entry, end=entry + 5)
-```
-
-This limits emulation to the small address range containing the `call`
-instruction. The goal is to demonstrate that execution resumes from the exact
-instruction at which the native process was snapshotted.
-
-The required Qiling `rootfs` does not need to contain anything for this
-example. `dummy_rootfs` only needs to exist as a directory because Qiling
-requires a rootfs during initialization. The default mappings created by
-Qiling are replaced with the mappings restored from the snapshot.
-
-Create the directory and run the script:
-
-```bash
-mkdir dummy_rootfs
-python3 emu_script.py
-```
-
-The example demonstrates the complete flow:
-
-```text
-native process
-     │
-     │ call repeat
-     ▼
-  snapshot
-     │
-     │ restore
-     ▼
-   Qiling
-     │
-     ▼
-resumed execution
-```
-
+After `make_qiling_from_snapshot`, you can use the `Qiling` object as usual.

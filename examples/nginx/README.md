@@ -98,7 +98,7 @@ pinned nginx version.
 Install `process-bridge` from the project root:
 
 ```bash
-pip install .
+pip install -e .
 ```
 
 Before starting `process-bridge`, schedule a delayed HTTP request:
@@ -114,7 +114,7 @@ that it arrives after nginx has been launched.
 Now start nginx through the x86_64 native component:
 
 ```bash
-process-bridge-x86_64-linux \
+/path/to/process-bridge/build/snapshotter-x86_64-release/snapshotter/pb-snapshotter \
     0x401234 \
     /usr/sbin/nginx \
     -c /path/to/examples/nginx/nginx.conf
@@ -149,32 +149,30 @@ and reads the `ngx_buf_t` passed as the second argument to
 `ngx_http_parse_request_line`:
 
 ```python
-from process_bridge import snaphot_init
+import process_bridge
+
+from qiling import Qiling
+from qiling.const import QL_VERBOSE, QL_ARCH
 
 
-def read_data(ql):
+def read_data(ql: Qiling) -> None:
     b_ptr = ql.arch.regs.rsi
 
     pos = ql.mem.read_ptr(b_ptr)
     last = ql.mem.read_ptr(b_ptr + 0x08)
 
     data = ql.mem.read(pos, last - pos)
-    print(data)
+    print(f"data:\n {data}")
 
 
 if __name__ == "__main__":
-    ql, entry = snaphot_init.from_snapshot(
-        "x86_64",
-        "dummy_rootfs",
-        "ql_snapshot",
+    ql, entry = process_bridge.make_qiling_from_snapshot(
+        "ql_snapshot", QL_ARCH.X8664, verbose=QL_VERBOSE.DEBUG
     )
 
     read_data(ql)
 
-    ql.emu_start(
-        begin=entry,
-        end=0,
-    )
+    ql.emu_start(begin=entry, end=0)
 ```
 
 `entry` is the restored value of `rip`, which points to the
@@ -190,18 +188,6 @@ point, these bytes contain the HTTP request nginx is about to parse.
 The `hook_address` callback runs before the instruction at `entry` is
 executed. Therefore, the callback sees the same register and memory state that
 was captured by `process-bridge`, immediately before the original `call`.
-
-The required Qiling `rootfs` does not need to contain anything for this
-example. `dummy_rootfs` only needs to exist as a directory because Qiling
-requires a rootfs during initialization. The default mappings created by
-Qiling are replaced with the mappings restored from the snapshot.
-
-Create the directory and run the script:
-
-```bash
-mkdir dummy_rootfs
-python3 emu_script.py
-```
 
 ## 7. What this demonstrates
 
